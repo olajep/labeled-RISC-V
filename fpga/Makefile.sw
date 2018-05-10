@@ -70,15 +70,15 @@ $(BBL_REPO_PATH): | $(SW_PATH)
 $(BBL_BUILD_PATH): $(BBL_PAYLOAD) | $(BBL_REPO_PATH)
 	mkdir -p $@
 	cd $@ && \
-		git checkout $(BBL_BUILD_COMMIT) && \
-		($(BBL_REPO_PATH)/configure $(BBL_CONFIG) || (git checkout @{-1}; false)) && \
-		git checkout @{-1}
+		echo git checkout $(BBL_BUILD_COMMIT) && \
+		($(BBL_REPO_PATH)/configure $(BBL_CONFIG) || (echo git checkout @{-1}; false)) && \
+		echo git checkout @{-1}
 
 $(BBL_ELF_BUILD): | $(BBL_BUILD_PATH)
 	cd $(@D) && \
-		git checkout $(BBL_BUILD_COMMIT) && \
-		(CFLAGS="$(BBL_CFLAGS)" $(MAKE) || (git checkout @{-1}; false)) && \
-		git checkout @{-1}
+		echo git checkout $(BBL_BUILD_COMMIT) && \
+		(CFLAGS="$(BBL_CFLAGS)" $(MAKE) || (echo git checkout @{-1}; false)) && \
+		echo git checkout @{-1}
 
 bbl-clean:
 	-rm $(BBL_ELF) $(BBL_BIN)
@@ -93,7 +93,7 @@ bbl-clean:
 $(LINUX_REPO_PATH): | $(SW_PATH)
 	mkdir -p $@
 	git clone https://github.com/LvNA-system/riscv-linux.git $@
-	cd $@ && (curl -L https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.6.2.tar.xz | tar -xJ --strip-components=1) && git checkout . && cp arch/riscv/configs/riscv64_pard .config && make ARCH=riscv menuconfig
+	cd $@ && (curl -L https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.6.2.tar.xz | tar -xJ --strip-components=1) && echo git checkout . && cp arch/riscv/configs/riscv64_pard .config && make ARCH=riscv menuconfig
 
 linux: $(LINUX_ELF)
 
@@ -102,9 +102,9 @@ $(LINUX_ELF): $(LINUX_ELF_BUILD)
 
 $(LINUX_ELF_BUILD): | $(LINUX_REPO_PATH) 
 	cd $(@D) && \
-		git checkout $(LINUX_BUILD_COMMIT) && \
-		(($(MAKE) -C $(ROOTFS_PATH) && $(MAKE) ARCH=riscv vmlinux) || (git checkout @{-1}; false)) && \
-		git checkout @{-1}
+		echo git checkout $(LINUX_BUILD_COMMIT) && \
+		(($(MAKE) -C $(ROOTFS_PATH) && $(MAKE) ARCH=riscv vmlinux) || (echo git checkout @{-1}; false)) && \
+		echo git checkout @{-1}
 
 
 linux-clean:
