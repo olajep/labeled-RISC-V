@@ -4,17 +4,17 @@ import Chisel._
 import freechips.rocketchip.config._
 import freechips.rocketchip.rocket._
 
-class Aggregator(val core: CoreTraceSource /*, l1: CacheTraceSource ... */) extends Module {
+class Aggregator(val core: CoreTraceSourceIO /*, l1: CacheTraceSource ... */) extends Module {
   def io = new Bundle {
-//    val valid = Bool(OUTPUT)
-//    when (core.io.valid) {
-//      printf ("valid\n")
-//      valid := core.io.valid
-//      /* feed into first stage of aggregator pipeline
-//       * ...
-//       * send to dram
-//       */
-//    }
+    val valid = Bool(OUTPUT)
+    when (core.valid) {
+      printf ("valid\n")
+      valid := core.valid
+      /* feed into first stage of aggregator pipeline
+       * ...
+       * send to dram
+       */
+    }
   }
   //}
 

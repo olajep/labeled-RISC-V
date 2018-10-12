@@ -740,7 +740,9 @@ class Rocket(implicit p: Parameters) extends CoreModule()(p)
         t.insn, t.insn)
     }
   }
-  val core_tracer = Module(new CoreTraceSource(io.trace_source, csr.io.trace(0)))
+  val core_tracer = Module(new CoreTraceSource(csr.io.trace(0))(p))
+  core_tracer.io.valid(true)
+  //io.trace_source.valid := core_tracer.io.valid
 //  /*
 //  t <> cputracer
 //   */

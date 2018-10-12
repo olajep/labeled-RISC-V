@@ -48,12 +48,12 @@ class TraceSinkIO(implicit p: Parameters) extends TraceIO {
   }
 }
 
-abstract class TraceSource(val io: TraceSourceIO) extends Module {
-  //def io = source
+abstract class TraceSource(implicit p: Parameters)  extends CoreModule {
+///  def io = _io
 }
 
-abstract class TraceSink(val io: TraceSinkIO) extends Module {
-  //def io = sink
+abstract class TraceSink(implicit p: Parameters)  extends CoreModule {
+//  def io = _io
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {

@@ -13,6 +13,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.util._
 import freechips.rocketchip.pard.ControlledCrossing
+import freechips.rocketchip.trace._
 
 case class RocketTileParams(
     core: RocketCoreParams = RocketCoreParams(),
@@ -112,6 +113,8 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   Annotated.params(this, outer.rocketParams)
 
   val core = Module(p(BuildCore)(outer.p))
+  /* if p(usetracingowl2*/
+  val aggregator = Module(new Aggregator(IO(core.io.trace_source)))
 
   val fpuOpt = outer.tileParams.core.fpu.map(params => Module(new FPU(params)(outer.p)))
 
