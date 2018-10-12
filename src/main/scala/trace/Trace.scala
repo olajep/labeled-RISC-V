@@ -39,13 +39,13 @@ class TraceIO(implicit p: Parameters) extends CoreBundle()(p)
     /* Can we specify everything here and if it's not used by the specific trace source/sink will be optimized away? */
 }
 
-class TraceSourceIO(implicit p: Parameters) extends TraceIO {
+class TraceSourceIO(implicit p: Parameters) extends TraceIO()(p) {
 }
 
-class TraceSinkIO(implicit p: Parameters) extends TraceIO {
-  {
-    this.flip()
-  }
+class TraceSinkIO(implicit p: Parameters) extends TraceIO()(p) {
+  //{
+  //  this.flip()
+  //}
 }
 
 abstract class TraceSource(implicit p: Parameters)  extends CoreModule {
