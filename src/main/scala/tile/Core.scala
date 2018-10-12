@@ -6,6 +6,7 @@ import Chisel._
 
 import freechips.rocketchip.config._
 import freechips.rocketchip.rocket._
+import freechips.rocketchip.trace._
 import freechips.rocketchip.util._
 import util._
 
@@ -107,5 +108,6 @@ trait HasCoreIO extends HasTileParameters {
     val ila = new ILABundle()
     val prefetch_enable = Bool(OUTPUT)
     val trace = Vec(coreParams.retireWidth, new TracedInstruction).asOutput
+    val trace_source = new CoreTraceSourceIO()(p)
   }
 }

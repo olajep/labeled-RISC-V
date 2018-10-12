@@ -8,6 +8,7 @@ import Chisel.ImplicitConversions._
 import chisel3.core.withReset
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.tile._
+import freechips.rocketchip.trace._
 import freechips.rocketchip.util._
 import freechips.rocketchip.util.property._
 import scala.collection.immutable.ListMap
@@ -739,6 +740,10 @@ class Rocket(implicit p: Parameters) extends CoreModule()(p)
         t.insn, t.insn)
     }
   }
+  val core_tracer = Module(new CoreTraceSource(io.trace_source, csr.io.trace(0)))
+//  /*
+//  t <> cputracer
+//   */
 
   PlusArg.timeout(
     name = "max_core_cycles",
