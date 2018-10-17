@@ -740,12 +740,7 @@ class Rocket(implicit p: Parameters) extends CoreModule()(p)
         t.insn, t.insn)
     }
   }
-  val core_tracer = Module(new CoreTraceSource(csr.io.trace(0))(p))
-  core_tracer.io.valid(true)
-  //io.trace_source.valid := core_tracer.io.valid
-//  /*
-//  t <> cputracer
-//   */
+  CoreTraceSource.connect(out = io.trace_source, csr = csr.io)
 
   PlusArg.timeout(
     name = "max_core_cycles",

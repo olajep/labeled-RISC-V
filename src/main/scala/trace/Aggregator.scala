@@ -5,25 +5,22 @@ import freechips.rocketchip.config._
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.tile.CoreModule
 
-//abstract class TraceAggregatorModule(implicit p: Parameters) extends CoreModule()(p)
-
-//class Aggregator(core: CoreTraceSourceIO /*, l1: CacheTraceSource ... */) extends Module {
 class TraceAggregator(implicit p: Parameters) extends CoreModule()(p) {
+  val DEBUG = true
+
   val io = new TraceIO()(p).flip()
 
-//  val io = new Bundle {
-//    val valid = Bool(OUTPUT)
-//    //when (core.valid) {
-//    //  printf ("valid\n")
-//    //  valid := core.valid
-//    //  /* feed into first stage of aggregator pipeline
-//    //   * ...
-//    //   * send to dram
-//    //   */
-//    //}
-//  }
-  //}
-  //io.valid := core.valid
+  if (DEBUG) {
+    when (io.valid) {
+      printf("TraceAggregator: C%d: %d [%d] pc=[%x] inst=[%x]\n",
+        io.hartid, io.time(31,0), io.insn.valid && !io.insn.exception,
+        io.insn.iaddr, io.insn.insn)
+    }
+  }
+
+  // l1 is per core, l2 is shared?, dram is shared ...
+  // l1 is split in instruction and data cache? do we need 2 trace units?
+  // val harts = new Seq
 
   // programmable in the sense that we can select in which mode the aggregator
   // should work. we really need to think about how to make it programmable or modular
@@ -32,5 +29,5 @@ class TraceAggregator(implicit p: Parameters) extends CoreModule()(p) {
   // for now there's only one mode, the 'call-graph mode'
   //val mode
   //
-  // where do we put this in rocketchip ?!?
+  // where do we put this in rocketchip (for now in each tile) ?!?
 }

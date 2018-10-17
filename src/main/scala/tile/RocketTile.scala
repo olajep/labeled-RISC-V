@@ -115,7 +115,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   val core = Module(p(BuildCore)(outer.p))
   /* if p(usetracingowl2*/
   val aggregator = Module(new TraceAggregator()(p))
-  aggregator.io  <> core.io.trace_source
+  aggregator.io <> core.io.trace_source
   //val aggregator = Module(new Aggregator(core.io.trace_source))
 
   val fpuOpt = outer.tileParams.core.fpu.map(params => Module(new FPU(params)(outer.p)))
