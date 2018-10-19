@@ -4,17 +4,35 @@ import Chisel._
 import freechips.rocketchip.config._
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.tile.CoreModule
+import freechips.rocketchip.tilelink._
+import freechips.rocketchip.config.Parameters
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.util._
 
-class TraceAggregator(implicit p: Parameters) extends CoreModule()(p) {
+class TraceAggregator(implicit p: Parameters) extends LazyModule {
   val DEBUG = true
 
-  val io = new TraceIO()(p).flip()
+  val params = TLClientParameters(
+    name = s"TraceAggregator", // s"TraceAggregator${hartID}"
+    sourceId = IdRange(0, 32)) // 32 = fifo depth?
+  val node = new TLClientNode(Seq(TLClientPortParameters(Seq(params))))
 
-  if (DEBUG) {
-    when (io.valid) {
-      printf("TraceAggregator: C%d: %d [%d] pc=[%x] inst=[%x]\n",
-        io.hartid, io.time(31,0), io.insn.valid && !io.insn.exception,
-        io.insn.iaddr, io.insn.insn)
+
+  lazy val module = new LazyModuleImp(this) {
+    val io = IO(new Bundle {
+      //val out = outs
+      val core = new TraceIO()(p).asInput
+    })
+
+    //val (outs, edges) = node.out.unzip
+
+    if (DEBUG) {
+      val core = io.core
+      when (core.valid) {
+        printf("TraceAggregator: C%d: %d [%d] pc=[%x] inst=[%x] DASM(%x)\n",
+          core.hartid, core.time(31,0), core.insn.valid && !core.insn.exception,
+          core.insn.iaddr, core.insn.insn, core.insn.insn)
+      }
     }
   }
 
