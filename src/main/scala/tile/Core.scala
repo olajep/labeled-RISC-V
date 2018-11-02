@@ -9,8 +9,8 @@ import freechips.rocketchip.rocket._
 import freechips.rocketchip.trace._
 import freechips.rocketchip.util._
 import util._
+import lvna.HasControlPlaneParameters
 
-case object BuildCore extends Field[Parameters => CoreModule with HasCoreIO]
 case object XLen extends Field[Int]
 
 // These parameters can be varied per-core
@@ -22,6 +22,7 @@ trait CoreParams {
   val useAtomics: Boolean
   val useAtomicsOnlyForIO: Boolean
   val useCompressed: Boolean
+  val useSCIE: Boolean
   val mulDiv: Option[MulDivParams]
   val fpu: Option[FPUParams]
   val fetchWidth: Int
@@ -40,6 +41,7 @@ trait CoreParams {
   val mtvecInit: Option[BigInt]
   val mtvecWritable: Boolean
   val tileControlAddr: Option[BigInt]
+  def customCSRs(implicit p: Parameters): CustomCSRs = new CustomCSRs
 
   def instBytes: Int = instBits / 8
   def fetchBytes: Int = fetchWidth * instBytes
@@ -57,6 +59,7 @@ trait HasCoreParameters extends HasTileParameters {
   val usingAtomicsOnlyForIO = coreParams.useAtomicsOnlyForIO
   val usingAtomicsInCache = usingAtomics && !usingAtomicsOnlyForIO
   val usingCompressed = coreParams.useCompressed
+  val usingSCIE = coreParams.useSCIE
 
   val retireWidth = coreParams.retireWidth
   val fetchWidth = coreParams.fetchWidth
@@ -95,7 +98,7 @@ class CoreInterrupts(implicit p: Parameters) extends TileInterrupts()(p) {
   val buserror = coreParams.tileControlAddr.map(a => Bool())
 }
 
-trait HasCoreIO extends HasTileParameters {
+trait HasCoreIO extends HasTileParameters with HasControlPlaneParameters {
   implicit val p: Parameters
   val io = new CoreBundle()(p) with HasExternallyDrivenTileConstants {
     val interrupts = new CoreInterrupts().asInput
@@ -104,6 +107,7 @@ trait HasCoreIO extends HasTileParameters {
     val ptw = new DatapathPTWIO().flip
     val fpu = new FPUCoreIO().flip
     val rocc = new RoCCCoreIO().flip
+    val procdsid = UInt(OUTPUT, procDSidWidth)
 
     val ila = new ILABundle()
     val prefetch_enable = Bool(OUTPUT)

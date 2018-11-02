@@ -4,6 +4,7 @@ package freechips.rocketchip.system
 
 import Chisel._
 import freechips.rocketchip.config.Parameters
+import freechips.rocketchip.devices.debug.Debug
 import freechips.rocketchip.diplomacy.LazyModule
 import freechips.rocketchip.amba.axi4._
 
@@ -12,21 +13,21 @@ class TestHarness()(implicit p: Parameters) extends Module {
     val success = Bool(OUTPUT)
   }
 
-  val dut = Module(LazyModule(if (p(UseEmu)) new LvNAEmuTop else new LvNAFPGATop).module)
+  // Weird compilation failure...
+  // val dut = Module(LazyModule(if (p(UseEmu)) new LvNAEmuTop else new LvNAFPGATop).module)
+  val dut = if (p(UseEmu)) Module(LazyModule(new LvNAEmuTop).module) else Module(LazyModule(new LvNAFPGATop).module)
   dut.reset := reset | dut.debug.ndreset
   dut.corerst := dut.reset
   dut.coreclk := dut.clock
-
-  val ahbInst = Module(LazyModule(new LvNAFPGATopAHB).module)
-  ahbInst.dontTouchPorts()
 
   dut.dontTouchPorts()
   dut.tieOffInterrupts()
   dut.connectSimAXIMem()
   dut.connectSimAXIMMIO()
-  dut.connectDebug(clock, reset, io.success)
+  Debug.connectDebug(dut.debug, clock, reset, io.success)
 
-  //dut.l2_frontend_bus_axi4.foreach(_.tieoff)
+  dut.l2_frontend_bus_axi4.foreach(_.tieoff)
+  /*
   val axi = dut.l2_frontend_bus_axi4(0)
   axi.r.ready := Bool(true)
   axi.b.ready := Bool(true)
@@ -64,4 +65,5 @@ class TestHarness()(implicit p: Parameters) extends Module {
   //axi.w.bits.data := UInt(0xdeadbeefL)
   //axi.w.bits.strb := UInt(0xff)
   //axi.w.bits.last := (Counter(axi.w.fire(), 0x4)._2)
+  */
 }

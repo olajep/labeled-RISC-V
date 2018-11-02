@@ -676,6 +676,7 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
   require(isPow2(nWays)) // TODO: relax this
   require(dataScratchpadSize == 0)
+  require(!usingVM || untagBits <= pgIdxBits, s"untagBits($untagBits) > pgIdxBits($pgIdxBits)")
 
   // ECC is only supported on the data array
   require(cacheParams.tagCode.isInstanceOf[IdentityCode])
@@ -710,7 +711,7 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   // check for unsupported operations
   assert(!s1_valid || !s1_req.cmd.isOneOf(M_PWR))
 
-  val dtlb = Module(new TLB(false, log2Ceil(coreDataBytes), nTLBEntries))
+  val dtlb = Module(new TLB(false, log2Ceil(coreDataBytes), TLBConfig(nTLBEntries)))
   io.ptw <> dtlb.io.ptw
   dtlb.io.kill := io.cpu.s2_kill
   dtlb.io.req.valid := s1_valid && !io.cpu.s1_kill && s1_readwrite
@@ -743,8 +744,9 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   when (s2_recycle) {
     s1_req := s2_req
   }
-  val s1_addr = dtlb.io.resp.paddr
-
+  val isMMIO = dtlb.io.resp.paddr < 0x100000000L.U
+  val mappedAddr = (dtlb.io.resp.paddr & memMask) | memBase
+  val s1_addr = Mux(isMMIO, dtlb.io.resp.paddr, mappedAddr)
   when (s1_clk_en) {
     s2_req.typ := s1_req.typ
     s2_req.phys := s1_req.phys
@@ -996,4 +998,7 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   io.cpu.perf.acquire := edge.done(tl_out.a)
   io.cpu.perf.release := edge.done(tl_out.c)
   io.cpu.perf.tlbMiss := io.ptw.req.fire()
+
+  // no clock-gating support
+  io.cpu.clock_enabled := true
 }

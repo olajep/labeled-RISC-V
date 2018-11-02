@@ -163,7 +163,7 @@ trait CanHaveMasterAXI4MemPort { this: BaseSubsystem =>
   memPortParamsOpt.foreach { params =>
     memBuses.map { m =>
        memAXI4Node := m.toDRAMController(Some(portName)) {
-        (AXI4SimpleL2Cache() := AXI4Dumper() := AXI4UserYanker() := AXI4IdIndexer(params.idBits) := TLToAXI4())
+        (AXI4Dumper() := AXI4UserYanker() := AXI4IdIndexer(params.idBits) := TLToAXI4() := TLSimpleL2Cache())
       }
     }
   }
@@ -316,7 +316,7 @@ trait CanHaveSlaveTLPort { this: BaseSubsystem =>
 trait CanHaveSlaveTLPortModuleImp extends LazyModuleImp {
   val outer: CanHaveSlaveTLPort
   val l2_frontend_bus_tl = IO(HeterogeneousBag.fromNode(outer.l2FrontendTLNode.out).flip)
-  (outer.l2FrontendTLNode.in zip l2_frontend_bus_tl) foreach { case ((bundle, _), io) => bundle <> io }
+  (outer.l2FrontendTLNode.out zip l2_frontend_bus_tl) foreach { case ((bundle, _), io) => bundle <> io }
 }
 
 /** Memory with AXI port for use in elaboratable test harnesses. */
