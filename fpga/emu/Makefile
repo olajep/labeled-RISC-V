@@ -3,6 +3,7 @@ fpga_dir = $(abspath ..)
 fpga_script_dir = $(fpga_dir)/scripts
 build_dir = $(fpga_dir)/build
 generated_dir = $(build_dir)/generated-src
+generated_dir_debug = $(build_dir)/generated-src-debug
 
 CONFIG ?= LvNAConfigemu
 
@@ -25,6 +26,11 @@ $(original_emu):
 	$(MAKE) all -C $(base_dir)/emulator CONFIG=$(CONFIG) \
 		generated_dir=$(generated_dir)
 
+debug:
+	$(MAKE) debug -C $(base_dir)/emulator CONFIG=$(CONFIG) \
+		generated_dir=$(generated_dir) \
+		generated_dir_debug=$(generated_dir_debug)
+
 $(emu_bin_hex_file): $(emu_bin_file)
 	mkdir -p $(@D)
 	bash $(emu_gen_script) $< $@
@@ -35,7 +41,13 @@ run-emu: $(emu) $(emu_bin_hex_file)
 	cd $(dir $(emu)) && $< +verbose . 3>&1 1>&2 2>&3 | spike-dasm > $(dir $(emu))/emu.log
 
 emu-clean:
-	-rm $(emu)
+	-rm -f $(emu)
+	-rm -rf $(generated_dir)/*
+
+debug-clean:
+	-rm -rf $(generated_dir_debug)/*
+
+clean: emu-clean debug-clean
 	-$(MAKE) clean -C $(base_dir)/emulator
 
-.PHONY: $(original_emu) emu run-emu emu-clean
+.PHONY: $(original_emu) emu run-emu emu-clean debug clean debug-clean
