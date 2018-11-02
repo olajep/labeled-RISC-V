@@ -16,6 +16,9 @@ class AXI4Dumper()(implicit p: Parameters) extends LazyModule
       when (in.ar.fire()) {
         printf("dumper: ar[len] = %d [addr] = 0x%x\n", in.ar.bits.len, in.ar.bits.addr)
       }
+      when (in.aw.fire()) {
+        printf("dumper: aw[len] = %d [addr] = 0x%x\n", in.aw.bits.len, in.aw.bits.addr)
+      }
     }
   }
 }
