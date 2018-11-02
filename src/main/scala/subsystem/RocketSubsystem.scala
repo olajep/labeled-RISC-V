@@ -51,6 +51,9 @@ trait HasRocketTiles extends HasTiles
     connectSlavePortsToCBus(rocket, crossing)
     connectInterrupts(rocket, Some(debug), clintOpt, plicOpt)
 
+    // Connect trace aggregator to system bus
+    sbus.fromMaster(Some("trace_aggregator"), BufferParams.flow) { rocket.aggregator.node }
+
     rocket
   }
 }

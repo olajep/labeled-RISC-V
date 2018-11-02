@@ -104,6 +104,8 @@ class RocketTile(
     if (!rocketParams.boundaryBuffers) super.makeSlaveBoundaryBuffers
     else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
   }
+
+  val aggregator = LazyModule(new TraceAggregator(hartId)(p))
 }
 
 class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
@@ -113,10 +115,6 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   Annotated.params(this, outer.rocketParams)
 
   val core = Module(p(BuildCore)(outer.p))
-  /* if p(usetracingowl2*/
-  val aggregator = Module(LazyModule(new TraceAggregator()(p)).module)
-  //tlMasterXbar.node := aggregator.node
-  aggregator.io.core <> core.io.trace_source
 
   val fpuOpt = outer.tileParams.core.fpu.map(params => Module(new FPU(params)(outer.p)))
 
@@ -181,4 +179,6 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   // TODO figure out how to move the below into their respective mix-ins
   dcacheArb.io.requestor <> dcachePorts
   ptw.io.requestor <> ptwPorts
+
+  outer.aggregator.module.io.core <> core.io.trace_source
 }
