@@ -5,7 +5,7 @@ build_dir = $(fpga_dir)/build
 generated_dir = $(build_dir)/generated-src
 generated_dir_debug = $(build_dir)/generated-src-debug
 
-CONFIG ?= LvNAConfigemu
+CONFIG ?= TraceConfigEmu
 
 -include $(base_dir)/Makefrag
 
