@@ -22,19 +22,30 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
 
   lazy val module = new LazyModuleImp(this) {
     val io = IO(new Bundle {
-      //val out = outs
-      val core = new TraceIO()(p).asInput
+      val core = new TraceIO().asInput
     })
 
+    val depth: Int = 32
+    val queue = Module(new Queue(new TraceIO, depth))
+
+    // We silently drop entries if queue overflows
+
+    val core_valid = RegInit(Bool(false))
+    val core = RegEnable(io.core, io.core.valid)
+    core_valid := io.core.valid || (core_valid && !queue.io.enq.ready)
+
+    queue.io.enq.valid := core_valid
+    queue.io.enq.bits := core
 
     val (out, edge) = node.out(0)
 
     val addr = Wire(RegInit(UInt(0x100004100L, width=64)))
-    val data = Wire(RegInit(UInt(0x0eadbeef, width=32)))
-    val size = log2Ceil(64 / 8).U
+    val data = Wire(init = 0.U(64.W))
+    val size = log2Ceil(data.getWidth / 8).U
 
     addr := UInt(0x100004100L)
-    data := UInt(0x0eadbeef)
+
+    data := queue.io.deq.bits.insn.iaddr
 
     val (a_first, a_last, req_done) = edge.firstlast(out.a)
     val (d_first, d_last, resp_done) = edge.firstlast(out.d)
@@ -45,8 +56,9 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
 
     val (pflegal, pfbits) = edge.Put(src, addr, size, data)
 
-    val a_gen = RegInit(Bool(false))
-    a_gen := !reset /* == io.core.valid */
+    val a_gen = Wire(init = Bool(false))
+    a_gen := queue.io.deq.valid
+    queue.io.deq.ready := out.a.fire() && queue.io.deq.valid
 
     // Wire up flow control
     out.a.valid := a_gen && pflegal && (!a_first || idMap.io.alloc.valid)
