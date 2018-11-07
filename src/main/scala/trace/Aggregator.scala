@@ -39,13 +39,23 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
 
     val (out, edge) = node.out(0)
 
-    val addr = Wire(RegInit(UInt(0x100004100L, width=64)))
+    val addr = Wire((UInt(0x100004100L, width=64)))
     val data = Wire(init = 0.U(64.W))
     val size = log2Ceil(data.getWidth / 8).U
 
-    addr := UInt(0x100004100L)
+    // "Ring buffer"
+    // TODO: Set address from S/W
+    val trace_base = UInt(0x100700000L, width=64)
+    val trace_offset = RegInit(UInt(0, width=32))
+    val trace_cnt = RegInit(UInt(0))
+    val trace_entries = 1024
+    when (out.a.fire()) {
+      trace_cnt := (trace_cnt + 1.U) & (trace_entries - 1).U
+    }
+    trace_offset := (trace_cnt << size)
 
     data := queue.io.deq.bits.insn.iaddr
+    addr := trace_base + trace_offset
 
     val (a_first, a_last, req_done) = edge.firstlast(out.a)
     val (d_first, d_last, resp_done) = edge.firstlast(out.d)
