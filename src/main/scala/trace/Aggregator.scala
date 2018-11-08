@@ -25,14 +25,17 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
       val core = new TraceIO().asInput
     })
 
+    val filter = Module(new FilterJumps)
+    filter.io.in := io.core
+
     val depth: Int = 32
     val queue = Module(new Queue(new TraceIO, depth))
 
     // We silently drop entries if queue overflows
 
     val core_valid = RegInit(Bool(false))
-    val core = RegEnable(io.core, io.core.valid)
-    core_valid := io.core.valid || (core_valid && !queue.io.enq.ready)
+    val core = RegEnable(filter.io.out, filter.io.out.valid)
+    core_valid := filter.io.out.valid || (core_valid && !queue.io.enq.ready)
 
     queue.io.enq.valid := core_valid
     queue.io.enq.bits := core
@@ -83,7 +86,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     out.e.valid := Bool(false)
 
     if (DEBUG) {
-      val core = io.core
+      val core = filter.io.out
       when (core.valid) {
         printf("TraceAggregator: C%d: %d [%d] pc=[%x] inst=[%x] DASM(%x)\n",
           core.hartid, core.time(31,0), core.insn.valid && !core.insn.exception,
