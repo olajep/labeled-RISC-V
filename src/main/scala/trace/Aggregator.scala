@@ -12,12 +12,10 @@ import freechips.rocketchip.util._
 class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
   val DEBUG: Boolean = true
 
-  val inFlight: Int = 1
-
   val clientParams =
     TLClientParameters(
       name = s"trace_aggregator_${hartid}",
-      sourceId = IdRange(0, inFlight))
+      sourceId = IdRange(0, 1))
   val node = TLClientNode(Seq(TLClientPortParameters(Seq(clientParams))))
 
   lazy val module = new LazyModuleImp(this) {
@@ -42,6 +40,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
 
     val (out, edge) = node.out(0)
 
+    val src = UInt(0)
     val addr = Wire((UInt(0x100004100L, width=64)))
     val data = Wire(init = 0.U(64.W))
     val size = log2Ceil(data.getWidth / 8).U
@@ -60,30 +59,26 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     data := queue.io.deq.bits.insn.iaddr
     addr := trace_base + trace_offset
 
-    val (a_first, a_last, req_done) = edge.firstlast(out.a)
-    val (d_first, d_last, resp_done) = edge.firstlast(out.d)
-
-    // Source ID generation
-    val idMap = Module(new IDMapGenerator(inFlight))
-    val src = idMap.io.alloc.bits holdUnless a_first
-
     val (pflegal, pfbits) = edge.Put(src, addr, size, data)
 
     val a_gen = Wire(init = Bool(false))
     a_gen := queue.io.deq.valid
     queue.io.deq.ready := out.a.fire() && queue.io.deq.valid
 
-    // Wire up flow control
-    out.a.valid := a_gen && pflegal && (!a_first || idMap.io.alloc.valid)
-    idMap.io.alloc.ready := a_gen && pflegal && a_first && out.a.ready
-    idMap.io.free.valid := d_first && out.d.fire()
-    idMap.io.free.bits := out.d.bits.source
-
     out.a.bits := pfbits
-    out.c.valid := Bool(false)
-    out.b.ready := Bool(true)
+
+    // Wire up flow control
+    val (a_first, _, _) = edge.firstlast(out.a)
+    val (_, _, d_done) = edge.firstlast(out.d)
+    val in_flight = RegInit(Bool(false))
+    in_flight := out.a.fire() || in_flight && !d_done
+    out.a.valid := a_gen && pflegal && (!a_first || !in_flight)
     out.d.ready := Bool(true)
+
+    // Tie off
+    out.c.valid := Bool(false)
     out.e.valid := Bool(false)
+    out.b.ready := Bool(true)
 
     if (DEBUG) {
       val core = filter.io.out
