@@ -23,7 +23,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
       val core = new TraceIO().asInput
     })
 
-    val filter = Module(new FilterJumps)
+    val filter = Module(new FilterJumps(after = 1))
     filter.io.in := io.core
 
     val depth: Int = 32
