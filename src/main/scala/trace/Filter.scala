@@ -23,7 +23,8 @@ abstract class Filter(before: Int = 0, after: Int = 0)(implicit p: Parameters) e
   val buf = Reg(new TraceIO)
   buf := io.in
 
-  val pipe = ShiftRegister(buf, before + 1, buf.valid)
+  val queue_depth = before + 1
+  val queue = Module(new Queue(new TraceIO, queue_depth, flow=true))
 
   val matches = Wire(Bool())
   matches := buf.valid && filter(buf)
@@ -31,14 +32,30 @@ abstract class Filter(before: Int = 0, after: Int = 0)(implicit p: Parameters) e
   val counter = RegInit(UInt(0))
   val depth = after + 1 + before
 
+  queue.io.enq.bits := buf
+  queue.io.enq.valid := buf.valid
+
   when (matches) {
-    counter := depth.U
-  } .elsewhen (counter =/= 0.U && buf.valid) {
+    when (counter === 0.U) {
+      counter := depth.U - (queue_depth.U - queue.io.count)
+    } .elsewhen (counter <= after.U) {
+      counter := after.U
+    } .otherwise {
+      counter := counter
+    }
+  } .elsewhen (counter =/= 0.U && queue.io.deq.valid) {
     counter := counter - 1.U
   }
 
-  io.out := pipe
-  io.out.valid := buf.valid && pipe.valid && counter =/= 0.U
+  val dequeue = Wire(Bool())
+  val is_full = Wire(Bool())
+  dequeue := counter =/= 0.U || matches
+  is_full := queue.io.count >= (queue_depth - 1).U
+
+  io.out := queue.io.deq.bits
+  io.out.valid := queue.io.deq.valid && dequeue
+
+  queue.io.deq.ready := is_full || dequeue
 }
 
 class FilterJumps(before: Int = 0, after: Int = 0)(implicit p: Parameters) extends Filter(before, after)(p) {
