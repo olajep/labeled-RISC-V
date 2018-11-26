@@ -15,8 +15,8 @@ abstract class Filter(before: Int = 0, after: Int = 0)(implicit p: Parameters) e
     val out = new TraceIO
   })
 
-
-  // Return false if should be filtered away
+  // Return false if should be filtered away. Input is not guarded by valid so
+  // it must be checked if the function is keeping any state.
   def filter(trace: TraceIO): Bool
 
   // Pipeline
@@ -65,5 +65,14 @@ class FilterJumps(before: Int = 0, after: Int = 0)(implicit p: Parameters) exten
     val pattern = Seq(JAL, JALR, C_JR , C_JALR)
 
     pattern.foldLeft(Bool(false)) (_ || _ === insn)
+  }
+}
+
+class FilterPrivSwitch(mask: Int = PRV.M) (before: Int = 1, after: Int = 0) (implicit p: Parameters) extends Filter(before, after)(p) {
+  def filter(trace: TraceIO): Bool = {
+    val priv = trace.insn.priv & mask.U
+    val prev_priv = RegEnable(priv, trace.valid) /* { reg_debug, reg_mstatus.prv } */
+
+    prev_priv =/= priv
   }
 }
