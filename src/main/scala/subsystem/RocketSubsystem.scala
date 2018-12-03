@@ -54,7 +54,11 @@ trait HasRocketTiles extends HasTiles
     connectInterrupts(rocket, Some(debug), clintOpt, plicOpt)
 
     // Connect trace aggregator to system bus
+    // TODO: Parameterize
     sbus.fromMaster(Some("trace_aggregator"), BufferParams.flow) { rocket.aggregator.node }
+    // Connect trace control device to system bus
+    sbus.control_bus.toVariableWidthSlave(Some("trace_ctrl")) { rocket.aggregator.ctrl_module.node }
+    ibus.fromSync := rocket.aggregator.ctrl_module.intnode
 
     rocket
   }

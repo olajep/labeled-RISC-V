@@ -17,14 +17,19 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
       name = s"trace_aggregator_${hartid}",
       sourceId = IdRange(0, 1))
   val node = TLClientNode(Seq(TLClientPortParameters(Seq(clientParams))))
+  val ctrl_module =
+    LazyModule(new TLTraceCtrl(TraceCtrlParams(0x70000000 + hartid * 4096)))
 
   lazy val module = new LazyModuleImp(this) {
     val io = IO(new Bundle {
       val core = new TraceIO().asInput
     })
+    val ctrl = ctrl_module.module.io
 
+    // TODO: flush queues when ctrl.enable is 0
     val filter = Module(new FilterJumps(after = 1))
     filter.io.in := io.core
+    filter.io.in.valid := ctrl.enable && io.core.valid
 
     val depth: Int = 32
     val queue = Module(new Queue(new TraceIO, depth))
@@ -45,24 +50,23 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     val data = Wire(init = 0.U(64.W))
     val size = log2Ceil(data.getWidth / 8).U
 
-    // "Ring buffer"
-    // TODO: Set address from S/W
-    val trace_base = UInt(0x100700000L, width=64)
+    // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
-    val trace_cnt = RegInit(UInt(0))
-    val trace_entries = 1024
-    when (out.a.fire()) {
-      trace_cnt := (trace_cnt + 1.U) & (trace_entries - 1).U
+    val trace_size_mask = ctrl.buf0_mask
+
+    when (!ctrl.enable) {
+      trace_offset := 0.U
+    } .elsewhen (out.a.fire()) {
+      trace_offset := (trace_offset + (1.U << size)) & trace_size_mask
     }
-    trace_offset := (trace_cnt << size)
 
     data := queue.io.deq.bits.insn.iaddr
-    addr := trace_base + trace_offset
+    addr := ctrl.buf0_addr + trace_offset
 
     val (pflegal, pfbits) = edge.Put(src, addr, size, data)
 
     val a_gen = Wire(init = Bool(false))
-    a_gen := queue.io.deq.valid
+    a_gen := ctrl.enable && queue.io.deq.valid
     queue.io.deq.ready := out.a.fire() && queue.io.deq.valid
 
     out.a.bits := pfbits
@@ -82,10 +86,10 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
 
     if (DEBUG) {
       val core = filter.io.out
-      when (core.valid) {
-        printf("TraceAggregator: C%d: %d [%d] pc=[%x] inst=[%x] DASM(%x)\n",
-          core.hartid, core.time(31,0), core.insn.valid && !core.insn.exception,
-          core.insn.iaddr, core.insn.insn, core.insn.insn)
+      when (ctrl.enable && core.valid) {
+         printf("TraceAggregator: C%d: %d [%d]=[%x] pc=[%x] priv=[%x] inst=[%x] DASM(%x)\n",
+           core.hartid, core.time(31,0), !core.insn.exception, core.insn.cause,
+           core.insn.iaddr, core.insn.priv, core.insn.insn, core.insn.insn)
       }
     }
   }
