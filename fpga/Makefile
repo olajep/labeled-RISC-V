@@ -13,9 +13,12 @@ VIVADO_FLAG = -nolog -nojournal -notrace
 
 PRJ_ROOT = board/$(BOARD)/build/$(PRJ_FULL)
 XPR_FILE = $(PRJ_ROOT)/$(PRJ_FULL).xpr
-$(XPR_FILE):
+$(XPR_FILE): pardcore
 	make -C pardcore BOARD=$(BOARD)
 	vivado $(VIVADO_FLAG) -mode batch -source board/$(BOARD)/mk.tcl -tclargs $(PRJ_FULL)
+
+pardcore:
+	make -C pardcore BOARD=$(BOARD)
 
 project: $(XPR_FILE)
 
@@ -25,6 +28,6 @@ bootgen:
 vivado: $(XPR_FILE)
 	vivado $(VIVADO_FLAG) $(XPR_FILE) &
 
-.PHONY: default project vivado bootgen
+.PHONY: default project vivado bootgen pardcore
 
 include Makefile.sw
