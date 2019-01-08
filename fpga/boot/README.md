@@ -82,13 +82,13 @@ cd path/to/labeled-RISC-V/fpga/boot
 git clone https://github.com/xilinx/device-tree-xlnx
 # modify the `device_tree_repo_path` variable in `mk.tcl` to the repo just cloned, if needed.
 ```
-* generate BOOT.BIN and device tree source
+* generate `BOOT.BIN` and `system.dtb` (the device tree blob)
 ```
 cd path-to-labeled-RISC-V/fpga
 make bootgen PRJ=my-project BOARD=your-target-board
 ```
 
-Find `BOOT.BIN` and `dts` under `path-to-labeled-RISC-V/fpga/boot/build/myproject-your-target-board/`.
+Find `BOOT.BIN` and `system.dtb` under `path-to-labeled-RISC-V/fpga/boot/build/myproject-your-target-board/`.
 
 ## Build linux kernel
 
@@ -117,52 +117,6 @@ make ARCH=arm -j16
 # Find `Image` under `linux-xlnx/arch/arm/boot/`
 ```
 
-## Build system.dtb - Device Tree Blob
-
-* create a new file `top.dts` to set bootargs and reserved-memory for the RISC-V subsystem
-```
-# for zynqmp
-path-to-labeled-RISC-V/fpga/boot/build/myproject-your-target-board/dts $ cat top.dts
-/include/ "system-top.dts"
-/ {
-  chosen {
-    bootargs = "root=/dev/mmcblk0p2 rootfstype=ext4 rootwait earlycon clk_ignore_unused cpuidle.off=1";
-  };
-  reserved-memory {
-    #address-cells = <2>;
-    #size-cells = <2>;
-    ranges;
-
-    mem_reserved: buffer@800000000 {
-      reg = <0x00000008 0x00000000 0x0 0x80000000>;
-    };
-    // ultraZ only has 2GB memory for PS, change the setting above accordingly
-	};
-};
-```
-```
-# for zynq
-path-to-labeled-RISC-V/fpga/boot/build/myproject-your-target-board/dts $ cat top.dts
-/include/ "system-top.dts"
-/ {
-  chosen {
-    bootargs = "root=/dev/mmcblk0p2 rootfstype=ext4 rootwait earlycon clk_ignore_unused";
-  };
-  reserved-memory {
-    #address-cells = <1>;
-    #size-cells = <1>;
-    ranges;
-
-    mem_reserved: buffer@100000000 {
-      reg = <0x10000008 0x10000000>;
-    };
-	};
-};
-```
-* compile the dts to dtb
-```
-dtc -I dts -O dtb -o system.dtb top.dts
-```
 
 ## Build rootfs in SD card
 

@@ -57,5 +57,6 @@ if {$brd != "ultraZ"} {
   set_property CONFIG.periph_type_overrides "{BOARD ${brd_version}}" [get_os]
 }
 generate_target -dir ${build_dir}/dts
+exec -ignorestderr dtc -i ${build_dir}/dts -I dts -O dtb ${script_dir}/dts/${brd}.dts -o ${build_dir}/system.dtb
 
 exit

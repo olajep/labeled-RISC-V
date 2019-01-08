@@ -1,0 +1,15 @@
+/include/ "system-top.dts"
+/ {
+	chosen {
+		bootargs = "root=/dev/mmcblk0p2 rootfstype=ext4 rootwait earlycon clk_ignore_unused cpuidle.off=1";
+	};
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		mem_reserved: buffer@800000000 {
+			reg = <0x00000008 0x00000000 0x0 0x80000000>;
+		};
+		// ultraZ only has 2GB memory for PS, change the setting above accordingly
+	};
+};

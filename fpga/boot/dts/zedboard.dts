@@ -1,0 +1,15 @@
+/include/ "system-top.dts"
+/ {
+	chosen {
+		bootargs = "root=/dev/mmcblk0p2 rootfstype=ext4 rootwait earlycon clk_ignore_unused";
+	};
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		mem_reserved: buffer@100000000 {
+		      reg = <0x10000008 0x10000000>;
+		};
+	};
+};
