@@ -78,8 +78,9 @@ Vivado -> File -> Export -> Export Hardware
 ```
 * set the correct path of device tree repo
 ```
+cd path/to/labeled-RISC-V/fpga/boot
 git clone https://github.com/xilinx/device-tree-xlnx
-# modify the `device_tree_repo_path` variable in `mk.tcl` to the repo just cloned
+# modify the `device_tree_repo_path` variable in `mk.tcl` to the repo just cloned, if needed.
 ```
 * generate BOOT.BIN and device tree source
 ```

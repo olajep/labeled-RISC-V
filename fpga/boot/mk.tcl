@@ -18,7 +18,7 @@ set build_dir ${script_dir}/build/${project_name}
 if {$brd == "ultraZ"} {
   set device_tree_repo_path "/home/yzh/xilinx/ultraZ/device-tree-xlnx"
 } else {
-  set device_tree_repo_path "/home/yzh/xilinx/device-tree-xlnx"
+  set device_tree_repo_path ${script_dir}/device-tree-xlnx
 }
 
 set hw_design [open_hw_design ${hdf_file}]
