@@ -12,6 +12,19 @@ $(SW_PATH):
 	mkdir -p $(SW_PATH)
 
 #--------------------------------------------------------------------
+# Development options
+#--------------------------------------------------------------------
+
+# Uncomment to skip git checkout (for development)
+#SKIP_CHECKOUT=yes
+
+ifdef SKIP_CHECKOUT
+GIT_CHECKOUT=true
+else
+GIT_CHECKOUT=git checkout
+endif
+
+#--------------------------------------------------------------------
 # Build tools
 #--------------------------------------------------------------------
 
@@ -32,7 +45,7 @@ BBL_BUILD_PATH = $(BBL_REPO_PATH)/build
 BBL_ELF_BUILD = $(BBL_BUILD_PATH)/bbl
 
 BBL_PAYLOAD = $(LINUX_ELF)
-BBL_CONFIG = --host=riscv64-unknown-elf --with-payload=$(BBL_PAYLOAD) --with-arch=rv64imac --enable-logo
+BBL_CONFIG = --host=riscv64-unknown-elf --with-payload=$(BBL_PAYLOAD) --with-arch=rv64imac --enable-logo --enable-print-device-tree
 
 BBL_ELF = $(build_dir)/bbl.elf
 BBL_BIN = $(build_dir)/linux.bin
@@ -68,15 +81,15 @@ $(BBL_REPO_PATH): | $(SW_PATH)
 $(BBL_BUILD_PATH): $(BBL_PAYLOAD) | $(BBL_REPO_PATH)
 	mkdir -p $@
 	cd $@ && \
-		git checkout $(BBL_BUILD_COMMIT) && \
-		($(BBL_REPO_PATH)/configure $(BBL_CONFIG) || (git checkout @{-1}; false)) && \
-		git checkout @{-1}
+		$(GIT_CHECKOUT) $(BBL_BUILD_COMMIT) && \
+		($(BBL_REPO_PATH)/configure $(BBL_CONFIG) || ($(GIT_CHECKOUT) @{-1}; false)) && \
+		$(GIT_CHECKOUT) @{-1}
 
 $(BBL_ELF_BUILD): | $(BBL_BUILD_PATH)
 	cd $(@D) && \
-		git checkout $(BBL_BUILD_COMMIT) && \
-		($(MAKE) || (git checkout @{-1}; false)) && \
-		git checkout @{-1}
+		$(GIT_CHECKOUT) $(BBL_BUILD_COMMIT) && \
+		($(MAKE) || ($(GIT_CHECKOUT) @{-1}; false)) && \
+		$(GIT_CHECKOUT) @{-1}
 
 bbl-clean:
 	-rm $(BBL_ELF) $(BBL_BIN)
@@ -107,9 +120,9 @@ $(LINUX_ELF): $(LINUX_ELF_BUILD)
 $(LINUX_ELF_BUILD): | $(LINUX_REPO_PATH) $(ROOTFS_PATH)
 	$(MAKE) -C $(ROOTFS_PATH)
 	cd $(@D) && \
-		git checkout $(LINUX_BUILD_COMMIT) && \
-		(($(MAKE) CROSS_COMPILE=$(RISCV_PREFIX) ARCH=riscv vmlinux) || (git checkout @{-1}; false)) && \
-		git checkout @{-1}
+		$(GIT_CHECKOUT) $(LINUX_BUILD_COMMIT) && \
+		(($(MAKE) CROSS_COMPILE=$(RISCV_PREFIX) ARCH=riscv vmlinux) || ($(GIT_CHECKOUT) @{-1}; false)) && \
+		$(GIT_CHECKOUT) @{-1}
 
 linux-clean:
 	-rm $(LINUX_ELF)
