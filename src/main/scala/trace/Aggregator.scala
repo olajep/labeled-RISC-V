@@ -18,7 +18,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
       sourceId = IdRange(0, 1))
   val node = TLClientNode(Seq(TLClientPortParameters(Seq(clientParams))))
   val ctrl_module =
-    LazyModule(new TLTraceCtrl(TraceCtrlParams(0x70000000 + hartid * 4096)))
+    LazyModule(new TLTraceCtrl(TraceCtrlParams(0x50000000 + hartid * 4096)))
 
   lazy val module = new LazyModuleImp(this) {
     val io = IO(new Bundle {
