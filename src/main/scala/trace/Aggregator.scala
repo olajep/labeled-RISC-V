@@ -27,7 +27,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     val ctrl = ctrl_module.module.io
 
     // TODO: flush queues when ctrl.enable is 0
-    val filter = Module(new FilterJumps(after = 1))
+    val filter = Module(new FilterPrivSwitch(mask=1)(before=3, after=2))
     filter.io.in := io.core
     filter.io.in.valid := ctrl.enable && io.core.valid
 
