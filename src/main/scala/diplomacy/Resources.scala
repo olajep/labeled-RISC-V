@@ -415,7 +415,7 @@ object ResourceAnchors
       Description("cpus", Map(
         "#address-cells" -> width,
         "#size-cells"    -> Seq(ResourceInt(0)),
-        "timebase-frequency" -> Seq(ResourceInt(1000000))))
+        "timebase-frequency" -> Seq(ResourceInt(100000000))))
     }
   }
 
