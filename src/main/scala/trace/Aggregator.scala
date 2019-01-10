@@ -24,7 +24,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     val io = IO(new Bundle {
       val core = new TraceIO().asInput
     })
-    val ctrl = ctrl_module.module.io
+    val ctrl: TraceCtrlBundle = ctrl_module.module.io
 
     // TODO: flush queues when ctrl.enable is 0
     val filter = Module(new FilterPrivSwitch(mask=1)(before=3, after=2))
@@ -46,9 +46,11 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     val (out, edge) = node.out(0)
 
     val src = UInt(0)
+    // ??? TODO: Make reg to avoid timing slack
     val addr = Wire((UInt(0x100004100L, width=64)))
+    //val addr_ready = Reg(Bool())
     val data = Wire(init = 0.U(64.W))
-    val size = log2Ceil(data.getWidth / 8).U
+    val size: Int = log2Ceil(data.getWidth / 8)
 
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
@@ -57,13 +59,15 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     when (!ctrl.enable) {
       trace_offset := 0.U
     } .elsewhen (out.a.fire()) {
-      trace_offset := (trace_offset + (1.U << size)) & trace_size_mask
+      val incr = (1 << size).U
+      trace_offset := (trace_offset + incr) & trace_size_mask
     }
 
     data := queue.io.deq.bits.insn.iaddr
+    /* TODO: Require that buf0_addr must be aligned to (trace_size_mask+1) so we can do | instead of + */
     addr := ctrl.buf0_addr + trace_offset
 
-    val (pflegal, pfbits) = edge.Put(src, addr, size, data)
+    val (pflegal, pfbits) = edge.Put(src, addr, size.U, data)
 
     val a_gen = Wire(init = Bool(false))
     a_gen := ctrl.enable && queue.io.deq.valid
