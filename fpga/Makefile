@@ -16,6 +16,9 @@ XPR_FILE = $(PRJ_ROOT)/$(PRJ_FULL).xpr
 $(XPR_FILE): pardcore
 	vivado $(VIVADO_FLAG) -mode batch -source board/$(BOARD)/mk.tcl -tclargs $(PRJ_FULL)
 
+bitstream: $(XPR_FILE)
+	vivado $(VIVADO_FLAG) -mode batch -source board/build.tcl -tclargs $(PRJ_FULL)
+
 pardcore:
 	make -C pardcore BOARD=$(BOARD)
 
@@ -27,6 +30,6 @@ bootgen:
 vivado: $(XPR_FILE)
 	vivado $(VIVADO_FLAG) $(XPR_FILE) &
 
-.PHONY: default project vivado bootgen pardcore
+.PHONY: default project vivado bootgen pardcore bitstream
 
 include Makefile.sw
