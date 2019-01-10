@@ -41,7 +41,7 @@ class LvNAFPGAConfigzcu102 extends Config(
   ++ new WithNL2CacheCapacity(2048)
   ++ new WithNBigCores(4)
   ++ new WithRationalRocketTiles
-  ++ new WithTimebase(BigInt(10000000)) // 10 MHz
+  ++ new WithTimebase(BigInt(100000000)) // 100 MHz
   ++ new WithExtMemSize(0x100000000L)
   ++ new WithJtagDTM
   ++ new WithDebugSBA
