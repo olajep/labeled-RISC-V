@@ -31,10 +31,10 @@ trait TraceCtrlModule extends HasRegMap
   val irq_en = RegInit(UInt(0, width = 1))
   val buf0_full = RegInit(UInt(0, width = 1))
   val (buf0_addr, buf0_addr_desc) =
-    DescribedReg(UInt(addrWidth.W), "buf0_addr", "Base address of trace buffer 0.",
+    DescribedReg(UInt(addrWidth.W), "buf0_addr", "Base address of trace buffer 0. Must have buf0_mask alignment.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
   val (buf0_mask, buf0_mask_desc) =
-    DescribedReg(UInt(addrWidth.W), "buf0_mask", "Log2 size of trace buffer 0.",
+    DescribedReg(UInt(addrWidth.W), "buf0_mask", "Log2 size of trace buffer 0 minus 1.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
   io.enable := enable.toBool
