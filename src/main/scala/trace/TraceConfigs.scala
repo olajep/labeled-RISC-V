@@ -17,4 +17,5 @@ class TraceConfigEmu extends Config(
 
 class TraceFPGAConfigzcu102 extends Config(
   new TraceConfigBase
+  ++ new WithNBigCores(1)
   ++ new LvNAFPGAConfigzcu102)
