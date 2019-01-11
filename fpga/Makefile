@@ -1,10 +1,12 @@
+# Default Vivado board & project names
+BOARD ?= zcu102
+PRJ ?= myproject
+PRJ_FULL = $(PRJ)-$(BOARD)
+
 include Makefile.check
 
 default: project
 
-# vivado project name
-PRJ ?= myproject
-PRJ_FULL = $(PRJ)-$(BOARD)
 VIVADO_FLAG = -nolog -nojournal -notrace
 
 #--------------------------------------------------------------------

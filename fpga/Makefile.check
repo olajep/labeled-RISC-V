@@ -1,7 +1,5 @@
 ifneq ($(MAKECMDGOALS),clean) # ignore check for make clean
 
-BOARD ?= zcu102
-
 BOARDS  = $(shell ls board/)
 
 ifeq ($(filter $(BOARDS), $(BOARD)), ) # BOARD must be valid
