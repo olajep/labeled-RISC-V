@@ -21,10 +21,11 @@ trait TraceCtrlBundle
 }
 
 trait TraceCtrlModule extends HasRegMap
+/* with HasInterruptSources */
 {
   val params: TraceCtrlParams
   val io: TraceCtrlBundle
-  val interrupts: Vec[Bool]
+  /* val interrupts: Vec[Bool] */
   val addrWidth = 64 /* xLen */
 
   val enable = RegInit(UInt(0, width = 1))
@@ -43,7 +44,7 @@ trait TraceCtrlModule extends HasRegMap
 
 
   // TODO: Implement interrupts
-  interrupts := Vec.tabulate(1) { i => false.B }
+  /* interrupts := Vec.tabulate(1) { i => false.B } */
 
   def reg(r: UInt, gn: String, d: RegFieldDesc) = RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
   regmap(
@@ -62,6 +63,6 @@ trait TraceCtrlModule extends HasRegMap
 
 // Create a concrete TL2 version of the abstract TraceCtrl slave
 class TLTraceCtrl(params: TraceCtrlParams)(implicit p: Parameters)
-  extends TLRegisterRouter(params.address, "tracectrl", Seq("clemson,trace-ctrl"), 1, beatBytes = 8)(
+  extends TLRegisterRouter(params.address, "tracectrl", Seq("clemson,trace-ctrl"), 0 /* 1 interrupt */, beatBytes = 8)(
   new TLRegBundle(params, _)    with TraceCtrlBundle)(
   new TLRegModule(params, _, _) with TraceCtrlModule)
