@@ -19,6 +19,9 @@ module system_top (
   wire [1:0] pardcore_corerstn;
   wire pardcore_uncoreclk;
   wire pardcore_uncorerstn;
+  wire pardcore_uncorerstn;
+  wire pardcore_uart0_irq;
+  wire pardcore_uart1_irq;
 
   wire mm2s_introut;
   wire s2mm_introut;
@@ -41,7 +44,11 @@ module system_top (
     .pardcore_coreclk(pardcore_coreclk),
     .pardcore_corerstn(pardcore_corerstn),
     .pardcore_uncoreclk(pardcore_uncoreclk),
-    .pardcore_uncorerstn(pardcore_uncorerstn)
+    .pardcore_uncorerstn(pardcore_uncorerstn),
+    .pardcore_uart0_irq(pardcore_uart0_irq),
+    .pardcore_uart1_irq(pardcore_uart1_irq),
+    .pardcore_uart2_irq(pardcore_uart2_irq),
+    .pardcore_uart3_irq(pardcore_uart3_irq)
   );
 
   addr_mapper addr_mapper_i(
@@ -60,7 +67,7 @@ module system_top (
     .jtag_TDO(jtag_TDO),
     .jtag_TRST(~pardcore_corerstn),
 
-    .intrs({s2mm_introut, mm2s_introut}),
+    .intrs({pardcore_uart3_irq, pardcore_uart2_irq, pardcore_uart1_irq, pardcore_uart0_irq, s2mm_introut, mm2s_introut}),
 
     .led(led[7]),
 
