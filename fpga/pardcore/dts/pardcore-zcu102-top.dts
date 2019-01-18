@@ -1,0 +1,101 @@
+/include/ "freechips.rocketchip.system.LvNAFPGAConfigzcu102.dts"
+
+/ {
+	chosen {
+		/* bootargs = "debug"; */
+		/* stdout-path = "serial1:115200n8"; */
+	};
+	aliases {
+		/* serial0 is handled by SBI (BBL) trap, aliases serial1 */
+		serial1 = &uart1;
+		serial2 = &uart2;
+		serial3 = &uart3;
+		serial4 = &uart4;
+	};
+
+	misc_clk_0: misc_clk_0 {
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+		compatible = "fixed-clock";
+		status = "okay";
+	};
+	soc {
+		/* TODO: Enable and route uart interrupts through this node */
+		external-interrupts {
+			status = "disabled";
+		};
+
+		/* TODO: Enable and make uartX children */
+		mmio-port-axi4@60000000 {
+			status = "disabled";
+		};
+
+		/* serial0 is handled by SBI (BBL) trap, aliases serial1 */
+		/* Use port-numbers that matches zynq-soc */
+
+		uart1: serial@60000000 {
+			status = "disabled";
+			clocks = <&misc_clk_0>;
+			compatible = "xlnx,xps-uartlite-1.00.a";
+			current-speed = <115200>;
+			device_type = "serial";
+			interrupt-parent = <&{/soc/interrupt-controller@c000000}>;
+			interrupts = <4>;
+			port-number = <1>;
+			reg = <0x0 0x60000000 0x0 0x1000>;
+			xlnx,baudrate = <0x1c200>;
+			xlnx,data-bits = <0x8>;
+			xlnx,odd-parity = <0x0>;
+			xlnx,s-axi-aclk-freq-hz-d = "100.0";
+			xlnx,use-parity = <0x0>;
+		};
+		uart2: serial@60001000 {
+			status = "okay";
+			clocks = <&misc_clk_0>;
+			compatible = "xlnx,xps-uartlite-1.00.a";
+			current-speed = <115200>;
+			device_type = "serial";
+			interrupt-parent = <&{/soc/interrupt-controller@c000000}>;
+			interrupts = <4>;
+			port-number = <2>;
+			reg = <0x0 0x60001000 0x0 0x1000>;
+			xlnx,baudrate = <0x1c200>;
+			xlnx,data-bits = <0x8>;
+			xlnx,odd-parity = <0x0>;
+			xlnx,s-axi-aclk-freq-hz-d = "100.0";
+			xlnx,use-parity = <0x0>;
+		};
+		uart3: serial@60002000 {
+			status = "okay";
+			clocks = <&misc_clk_0>;
+			compatible = "xlnx,xps-uartlite-1.00.a";
+			current-speed = <115200>;
+			device_type = "serial";
+			interrupt-parent = <&{/soc/interrupt-controller@c000000}>;
+			interrupts = <5>;
+			port-number = <3>;
+			reg = <0x0 0x60002000 0x0 0x1000>;
+			xlnx,baudrate = <0x1c200>;
+			xlnx,data-bits = <0x8>;
+			xlnx,odd-parity = <0x0>;
+			xlnx,s-axi-aclk-freq-hz-d = "100.0";
+			xlnx,use-parity = <0x0>;
+		};
+		uart4: serial@60003000 {
+			status = "okay";
+			clocks = <&misc_clk_0>;
+			compatible = "xlnx,xps-uartlite-1.00.a";
+			current-speed = <115200>;
+			device_type = "serial";
+			interrupt-parent = <&{/soc/interrupt-controller@c000000}>;
+			interrupts = <6>;
+			port-number = <4>;
+			reg = <0x0 0x60003000 0x0 0x1000>;
+			xlnx,baudrate = <0x1c200>;
+			xlnx,data-bits = <0x8>;
+			xlnx,odd-parity = <0x0>;
+			xlnx,s-axi-aclk-freq-hz-d = "100.0";
+			xlnx,use-parity = <0x0>;
+		};
+	};
+};

@@ -7,12 +7,13 @@
 # verify proper functionality.
 #
 
-default: verilog
+default: verilog devicetree
 
 fpga_dir = $(abspath ..)
 base_dir = $(fpga_dir)/..
 build_dir = $(fpga_dir)/build
 generated_dir = $(build_dir)/generated-src
+dts_dir  = dts
 
 MODEL ?= TestHarness
 BOARD ?= zcu102
@@ -28,6 +29,8 @@ gen_rtl = $(generated_dir)/$(long_name).v
 srams_rtl = $(generated_dir)/$(long_name).behav_srams.v
 other_rtl = $(base_dir)/src/main/resources/vsrc/AsyncResetReg.v \
             $(base_dir)/src/main/resources/vsrc/plusarg_reader.v
+dts       = pardcore-$(BOARD)-top.dts
+dtb       = $(dts:.dts=.dtb)
 
 $(gen_rtl):
 	$(MAKE) verilog -C $(base_dir)/vsim CONFIG=$(CONFIG) MODEL=$(MODEL) generated_dir=$(generated_dir)
@@ -42,7 +45,12 @@ $(rocketchip_rtl): $(gen_rtl) $(srams_rtl) $(other_rtl)
 
 verilog: $(rocketchip_rtl)
 
-.PHONY: $(gen_rtl) verilog
+$(build_dir)/%.dtb: $(dts_dir)/%.dts
+	dtc -i $(generated_dir) -I dts -O dtb $< -o $@
+
+devicetree: $(build_dir)/$(dtb)
+
+.PHONY: $(gen_rtl) verilog devicetree
 
 #--------------------------------------------------------------------
 # Cleaning
@@ -50,5 +58,6 @@ verilog: $(rocketchip_rtl)
 
 clean:
 	-rm -rf $(generated_dir)
+	-rm -rf $(build_dir)/$(dtb)
 
 .PHONY: default clean
