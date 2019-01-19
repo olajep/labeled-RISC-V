@@ -42,9 +42,9 @@ cp u-boot-xlnx/u-boot.elf path-to-labeled-RISC-V/fpga/boot/build/zynq/
 
 ## Build BOOT.BIN and Device Tree Source
 
-* (Optional) If you want to download the bitstream in fsbl,
-also put the bitstream under `path-to-labeled-RISC-V/fpga/boot/build/{zynqmp,zynq}`,
-and uncomment the description about bitstream in `bootgen-{zynqmp,zynq}.bif`.
+* (Optional) If you do NOT want to download the bitstream in fsbl,
+comment out the bitstream line in `bootgen-{zynqmp,zynq}.bif`.
+`make bootgen` places a symlink to the bitstream at `path-to-labeled-RISC-V/fpga/boot/build/{zynqmp,zynq}`,
 
 ```
 # for zynqmp

@@ -46,8 +46,12 @@ switch -regexp -- $brd {
 
 generate_app -hw $hw_design -os standalone -proc $processor -app ${arch}_fsbl -compile -sw fsbl -dir ${build_dir}/fsbl
 
+# BOOT.BIN
+set sdk_dir [file normalize [file dirname ${hdf_file}]]
+set bit_file [get_hw_files -filter {TYPE == bit}]
 exec mkdir -p ${script_dir}/build/${arch}
 exec ln -sf ${build_dir}/fsbl/executable.elf ${script_dir}/build/${arch}/fsbl.elf
+exec ln -sf ${sdk_dir}/${bit_file} ${script_dir}/build/${arch}/system_top.bit
 exec bootgen -arch ${arch} -image ${script_dir}/bootgen-${arch}.bif -w -o i ${build_dir}/BOOT.BIN
 
 #device tree
