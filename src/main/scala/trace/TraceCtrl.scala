@@ -17,7 +17,7 @@ trait TraceCtrlBundle
   val buf0_addr = UInt(64.W)
   val buf0_mask = UInt(64.W)
 
-  val buf0_full = Bool()
+  val buf0_full = Input(Bool())
 }
 
 trait TraceCtrlModule extends HasRegMap
@@ -35,12 +35,14 @@ trait TraceCtrlModule extends HasRegMap
     DescribedReg(UInt(addrWidth.W), "buf0_addr", "Base address of trace buffer 0. Must have buf0_mask alignment.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
   val (buf0_mask, buf0_mask_desc) =
-    DescribedReg(UInt(addrWidth.W), "buf0_mask", "Log2 size of trace buffer 0 minus 1.",
+    DescribedReg(UInt(addrWidth.W), "buf0_mask", "Size of trace buffer 0 minus 1.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
   io.enable := enable.toBool
   io.buf0_addr := buf0_addr
   io.buf0_mask := buf0_mask
+
+  buf0_full := io.buf0_full.asUInt
 
 
   // TODO: Implement interrupts

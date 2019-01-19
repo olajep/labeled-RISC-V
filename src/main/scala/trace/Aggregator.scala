@@ -25,11 +25,12 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
       val core = new TraceIO().asInput
     })
     val ctrl: TraceCtrlBundle = ctrl_module.module.io
+    val tracebuf_full =  RegInit(Bool(false))
 
     // TODO: flush queues when ctrl.enable is 0
     val filter = Module(new FilterPrivSwitch(mask=1)(before=3, after=2))
     filter.io.in := io.core
-    filter.io.in.valid := ctrl.enable && io.core.valid
+    filter.io.in.valid := ctrl.enable && io.core.valid && !tracebuf_full
 
     val depth: Int = 32
     val queue = Module(new Queue(new TraceIO, depth))
@@ -58,10 +59,15 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
 
     when (!ctrl.enable) {
       trace_offset := 0.U
+      tracebuf_full := false.B
     } .elsewhen (out.a.fire()) {
       val incr = (1 << size).U
-      trace_offset := (trace_offset + incr) & trace_size_mask
+      val new_traceoffset = (trace_offset + incr) & trace_size_mask
+      trace_offset := new_traceoffset
+      tracebuf_full := tracebuf_full || new_traceoffset === 0.U
     }
+
+    ctrl.buf0_full := tracebuf_full
 
     data := queue.io.deq.bits.insn.iaddr
     /* TODO: Require that buf0_addr must be aligned to (trace_size_mask+1) so we can do | instead of + */
@@ -70,7 +76,7 @@ class TraceAggregator(hartid: Int)(implicit p: Parameters) extends LazyModule {
     val (pflegal, pfbits) = edge.Put(src, addr, size.U, data)
 
     val a_gen = Wire(init = Bool(false))
-    a_gen := ctrl.enable && queue.io.deq.valid
+    a_gen := ctrl.enable && !tracebuf_full && queue.io.deq.valid
     queue.io.deq.ready := out.a.fire() && queue.io.deq.valid
 
     out.a.bits := pfbits
