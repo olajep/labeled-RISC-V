@@ -50,6 +50,11 @@ bootgen: $(HWDEF_FILE)
 vivado: $(XPR_FILE)
 	vivado $(VIVADO_FLAG) $(XPR_FILE) &
 
+clean:
+	make -C pardcore clean BOARD=$(BOARD)
+	rm -rf $(PRJ_ROOT)
+	rm -rf boot/build/$(PRJ_FULL)
+
 .PHONY: default project vivado bootgen pardcore bitstream
 
 include Makefile.sw

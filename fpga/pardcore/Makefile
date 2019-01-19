@@ -57,7 +57,8 @@ devicetree: $(build_dir)/$(dtb)
 #--------------------------------------------------------------------
 
 clean:
-	-rm -rf $(generated_dir)
+	-rm -rf $(generated_dir)/freechips.rocketchip.system.$(CONFIG)*
+	-rm -rf $(rocketchip_rtl)
 	-rm -rf $(build_dir)/$(dtb)
 
 .PHONY: default clean
