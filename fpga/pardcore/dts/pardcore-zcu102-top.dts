@@ -2,15 +2,14 @@
 
 / {
 	chosen {
-		/* bootargs = "debug"; */
-		/* stdout-path = "serial1:115200n8"; */
+		bootargs = "earlycon console=ttyUL1,115200n8";
+		stdout-path = "serial0:115200n8";
 	};
 	aliases {
-		/* serial0 is handled by SBI (BBL) trap, aliases serial1 */
+		serial0 = &uart0;
 		serial1 = &uart1;
 		serial2 = &uart2;
 		serial3 = &uart3;
-		serial4 = &uart4;
 	};
 
 	misc_clk_0: misc_clk_0 {
@@ -30,11 +29,8 @@
 			status = "disabled";
 		};
 
-		/* serial0 is handled by SBI (BBL) trap, aliases serial1 */
-		/* Use port-numbers that matches zynq-soc */
-
-		uart1: serial@60000000 {
-			status = "disabled";
+		uart0: serial@60000000 {
+			status = "okay";
 			clocks = <&misc_clk_0>;
 			compatible = "xlnx,xps-uartlite-1.00.a";
 			current-speed = <115200>;
@@ -49,7 +45,7 @@
 			xlnx,s-axi-aclk-freq-hz-d = "100.0";
 			xlnx,use-parity = <0x0>;
 		};
-		uart2: serial@60002000 {
+		uart1: serial@60002000 {
 			status = "okay";
 			clock-frequency = <100000000>;
 			clocks = <&misc_clk_0>;
@@ -63,7 +59,7 @@
 			reg-offset = <0x1000>;
 			reg-shift = <2>;
 		};
-		uart3: serial@60004000 {
+		uart2: serial@60004000 {
 			status = "okay";
 			clock-frequency = <100000000>;
 			clocks = <&misc_clk_0>;
@@ -77,7 +73,7 @@
 			reg-offset = <0x1000>;
 			reg-shift = <2>;
 		};
-		uart4: serial@60006000 {
+		uart3: serial@60006000 {
 			status = "okay";
 			clock-frequency = <100000000>;
 			clocks = <&misc_clk_0>;
