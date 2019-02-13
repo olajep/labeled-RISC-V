@@ -46,10 +46,10 @@ run-emu: $(emu) $(emu_bin_hex_file)
 
 emu-clean:
 	-rm -f $(emu)
-	-rm -rf $(generated_dir)/*
+	-rm -rf $(generated_dir)/freechips.rocketchip.system.$(CONFIG)*
 
 debug-clean:
-	-rm -rf $(generated_dir_debug)/*
+	-rm -rf $(generated_dir_debug)/freechips.rocketchip.system.$(CONFIG)*
 
 clean: emu-clean debug-clean
 	-$(MAKE) clean -C $(base_dir)/emulator
