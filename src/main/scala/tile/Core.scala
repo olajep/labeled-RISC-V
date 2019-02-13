@@ -112,6 +112,6 @@ trait HasCoreIO extends HasTileParameters with HasControlPlaneParameters {
     val ila = new ILABundle()
     val prefetch_enable = Bool(OUTPUT)
     val trace = Vec(coreParams.retireWidth, new TracedInstruction).asOutput
-    val trace_source = new CoreTraceSourceIO()(p)
+    val monitor = new CoreMonitorIO()(p)
   }
 }

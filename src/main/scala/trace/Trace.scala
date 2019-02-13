@@ -19,6 +19,16 @@ object TraceKind {
   val core :: l1 :: l2 :: dram :: Nil = Enum(UInt(), 4)
 }
 
+class TraceCfgIO extends Bundle {
+  val regfile = new RegFileMonitorCfgIO
+}
+
+
+class MonitorIO(implicit p: Parameters) extends CoreBundle()(p) {
+  val trace = new TraceIO
+  val cfg = new TraceCfgIO
+}
+
 class TraceIO(implicit p: Parameters) extends CoreBundle()(p) {
 
   // What type of trace (should be compile time static?!)
@@ -31,6 +41,10 @@ class TraceIO(implicit p: Parameters) extends CoreBundle()(p) {
   val insn = new TracedInstruction()(p)
 
   val time = UInt(OUTPUT, xLen)
+
+  val register = UInt(OUTPUT, xLen) // Traced register
+
+  val cfg = new TraceCfgIO
 
   //// val kind = UInt(OUTPUT, 8 /* log2ceil last traceiokind enum */ ) /* <-- this is static and should be bound at compile time */
 
@@ -53,8 +67,11 @@ abstract class TraceSourceIO(implicit p: Parameters) extends TraceIO()(p) {
 }
 
 abstract class TraceSinkIO(implicit p: Parameters) extends TraceIO()(p) {
-  /* { this.flip() } <-- doesn't work */
 }
+
+//object TraceSinkIO {
+//  def apply() = new TraceIO.flip()
+//}
 
 abstract class TraceSource(implicit p: Parameters) extends CoreModule()(p) {
 ///  def io = _io
@@ -62,6 +79,12 @@ abstract class TraceSource(implicit p: Parameters) extends CoreModule()(p) {
 
 abstract class TraceSink(implicit p: Parameters) extends CoreModule()(p) {
 //  def io = _io
+}
+
+class DefaultTraceFormat extends Bundle {
+  val timestamp = UInt(width = 20)
+  val register = UInt(width = 10)
+  val priv = UInt(width = 2)
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {

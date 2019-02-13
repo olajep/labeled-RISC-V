@@ -825,6 +825,13 @@ class Rocket(implicit p: Parameters) extends CoreModule()(p)
 
   p(BundleMonitorKey).foreach { _ ("rocket_core_monitor", coreMonitorBundle) }
 
+  // TODO: Use CoreMonitorBundle (e.g. connect( ... , monitor))
+  // (need https://github.com/freechipsproject/rocket-chip/pull/1797)
+  CoreMonitor.connect(csr, io.monitor)
+  io.monitor.regfile.dst := coreMonitorBundle.wrdst
+  io.monitor.regfile.data := coreMonitorBundle.wrdata
+  io.monitor.regfile.valid := coreMonitorBundle.wren
+
   val t = csr.io.trace(0)
   when (csr.io.simlog) {
   if (enableCommitLog) {
@@ -864,7 +871,6 @@ class Rocket(implicit p: Parameters) extends CoreModule()(p)
     }
   }
 
-  CoreTraceSource.connect(out = io.trace_source, csr = csr.io)
   }
 
   PlusArg.timeout(

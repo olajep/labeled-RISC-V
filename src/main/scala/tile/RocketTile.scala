@@ -108,7 +108,7 @@ class RocketTile(
     else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
   }
 
-  val aggregator = LazyModule(new TraceAggregator(hartId)(p))
+  val aggregator = LazyModule(new TraceAggregator(this, hartId)(p))
 }
 
 class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
@@ -191,7 +191,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   dcacheArb.io.requestor <> dcachePorts
   ptw.io.requestor <> ptwPorts
 
-  outer.aggregator.module.io.core <> core.io.trace_source
+  outer.aggregator.module.io.core <> core.io.monitor
 }
 
 trait HasFpuOpt { this: RocketTileModuleImp =>
