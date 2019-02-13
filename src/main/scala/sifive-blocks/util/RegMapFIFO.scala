@@ -8,18 +8,24 @@ import freechips.rocketchip.regmapper._
 object NonBlockingEnqueue {
   def apply(enq: DecoupledIO[UInt], regWidth: Int = 32): Seq[RegField] = {
     val enqWidth = enq.bits.getWidth
+    val quash = Wire(Bool())
     require(enqWidth > 0)
     require(regWidth > enqWidth)
     Seq(
       RegField(enqWidth,
         RegReadFn(UInt(0)),
         RegWriteFn((valid, data) => {
-          enq.valid := valid
+          enq.valid := valid && !quash
           enq.bits := data
           Bool(true)
-        })),
+        }), RegFieldDesc("data", "Transmit data", access=RegFieldAccessType.W)),
       RegField(regWidth - enqWidth - 1),
-      RegField.r(1, !enq.ready))
+      RegField(1,
+        !enq.ready,
+        RegWriteFn((valid, data) =>  {
+          quash := valid && data(0)
+          Bool(true)
+        }), RegFieldDesc("full", "Transmit FIFO full", access=RegFieldAccessType.R, volatile=true)))
   }
 }
 
@@ -34,8 +40,9 @@ object NonBlockingDequeue {
         RegReadFn(ready => {
           deq.ready := ready
           (Bool(true), deq.bits)
-        })),
+        }), RegFieldDesc("data", "Receive data", volatile=true)),
       RegField(regWidth - deqWidth - 1),
-      RegField.r(1, !deq.valid))
+      RegField.r(1, !deq.valid,
+                 RegFieldDesc("empty", "Receive FIFO empty", volatile=true)))
   }
 }

@@ -2,186 +2,36 @@
 package sifive.blocks.devices.uart
 
 import Chisel._
-import freechips.rocketchip.tilelink._
-import freechips.rocketchip.config._
+import freechips.rocketchip.config.Parameters
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.interrupts._
 import freechips.rocketchip.regmapper._
-import freechips.rocketchip.util._
+import freechips.rocketchip.tilelink._
+
 import sifive.blocks.util.{NonBlockingEnqueue, NonBlockingDequeue}
 
 case class UARTParams(
   address: BigInt,
   dataBits: Int = 8,
-  stopBits: Int = 1,
+  stopBits: Int = 2,
   divisorBits: Int = 16,
   oversample: Int = 4,
   nSamples: Int = 3,
   nTxEntries: Int = 8,
-  nRxEntries: Int = 8)
-
-trait HasUARTParameters {
-  def c: UARTParams
-  def uartDataBits = c.dataBits
-  def uartStopBits = c.stopBits
-  def uartDivisorBits = c.divisorBits
-
-  def uartOversample = c.oversample
-  def uartOversampleFactor = 1 << uartOversample
-  def uartNSamples = c.nSamples
-
-  def uartNTxEntries = c.nTxEntries
-  def uartNRxEntries = c.nRxEntries
-
-  require(uartDivisorBits > uartOversample)
-  require(uartOversampleFactor > uartNSamples)
+  nRxEntries: Int = 8,
+  withRx: Boolean = true,
+  withInterrupts: Boolean = true,
+  withPrinter: Boolean = false,
+  withFast: Boolean = false)
+{
+  def oversampleFactor = 1 << oversample
+  require(divisorBits > oversample)
+  require(oversampleFactor > nSamples)
 }
-
-abstract class UARTModule(val c:UARTParams)(implicit val p: Parameters)
-    extends Module with HasUARTParameters
 
 class UARTPortIO extends Bundle {
   val txd = Bool(OUTPUT)
   val rxd = Bool(INPUT)
-}
-
-trait HasUARTTopBundleContents extends Bundle {
-  val port = new UARTPortIO
-}
-
-class UARTTx(c: UARTParams)(implicit p: Parameters) extends UARTModule(c)(p) {
-  val io = new Bundle {
-    val en = Bool(INPUT)
-    val in = Decoupled(Bits(width = uartDataBits)).flip
-    val out = Bits(OUTPUT, 1)
-    val div = UInt(INPUT, uartDivisorBits)
-    val nstop = UInt(INPUT, log2Up(uartStopBits))
-  }
-
-  val prescaler = Reg(init = UInt(0, uartDivisorBits))
-  val pulse = (prescaler === UInt(0))
-
-  private val n = uartDataBits + 1
-  val counter = Reg(init = UInt(0, log2Floor(n + uartStopBits) + 1))
-  val shifter = Reg(Bits(width = n))
-  val out = Reg(init = Bits(1, 1))
-  io.out := out
-
-  val busy = (counter =/= UInt(0))
-  io.in.ready := io.en && !busy
-  when (io.in.fire()) {
-    shifter := Cat(io.in.bits, Bits(0, 1))
-    counter := Mux1H((0 until uartStopBits).map(i =>
-      (io.nstop === UInt(i)) -> UInt(n + i + 1)))
-  }
-  when (busy) {
-    prescaler := Mux(pulse, io.div, prescaler - UInt(1))
-  }
-  when (pulse && busy) {
-    counter := counter - UInt(1)
-    shifter := Cat(Bits(1, 1), shifter >> 1)
-    out := shifter(0)
-  }
-}
-
-class UARTRx(c: UARTParams)(implicit p: Parameters) extends UARTModule(c)(p) {
-  val io = new Bundle {
-    val en = Bool(INPUT)
-    val in = Bits(INPUT, 1)
-    val out = Valid(Bits(width = uartDataBits))
-    val div = UInt(INPUT, uartDivisorBits)
-  }
-
-  val debounce = Reg(init = UInt(0, 2))
-  val debounce_max = (debounce === UInt(3))
-  val debounce_min = (debounce === UInt(0))
-
-  val prescaler = Reg(init = UInt(0, uartDivisorBits - uartOversample))
-  val start = Wire(init = Bool(false))
-  val busy = Wire(init = Bool(false))
-  val pulse = (prescaler === UInt(0)) && busy
-
-  when (busy) {
-    prescaler := prescaler - UInt(1)
-  }
-  when (start || pulse) {
-    prescaler := io.div >> uartOversample
-  }
-
-  val sample = Reg(Bits(width = uartNSamples))
-  val voter = Majority(sample.toBools.toSet)
-  when (pulse) {
-    sample := Cat(sample, io.in)
-  }
-
-  private val delay0 = (uartOversampleFactor + uartNSamples) >> 1
-  private val delay1 = uartOversampleFactor
-
-  val timer = Reg(UInt(width = uartOversample + 1))
-  val counter = Reg(UInt(width = log2Floor(uartDataBits) + 1))
-  val shifter = Reg(Bits(width = uartDataBits))
-  val expire = (timer === UInt(0)) && pulse
-
-  val sched = Wire(init = Bool(false))
-  when (pulse) {
-    timer := timer - UInt(1)
-  }
-  when (sched) {
-    timer := UInt(delay1-1)
-  }
-
-  val valid = Reg(init = Bool(false))
-  valid := Bool(false)
-  io.out.valid := valid
-  io.out.bits := shifter
-
-  val (s_idle :: s_start :: s_data :: Nil) = Enum(UInt(), 3)
-  val state = Reg(init = s_idle)
-
-  switch (state) {
-    is (s_idle) {
-      when (!(!io.in) && !debounce_min) {
-        debounce := debounce - UInt(1)
-      }
-      when (!io.in) {
-        debounce := debounce + UInt(1)
-        when (debounce_max) {
-          state := s_start
-          start := Bool(true)
-          timer := UInt(delay0-1)
-        }
-      }
-    }
-
-    is (s_start) {
-      busy := Bool(true)
-      when (expire) {
-        sched := Bool(true)
-        when (voter) {
-          state := s_idle
-        } .otherwise {
-          state := s_data
-          counter := UInt(uartDataBits)
-        }
-      }
-    }
-
-    is (s_data) {
-      busy := Bool(true)
-      when (expire) {
-        counter := counter - UInt(1)
-        when (counter === UInt(0)) {
-          state := s_idle
-          valid := Bool(true)
-        } .otherwise {
-          shifter := Cat(voter, shifter >> 1)
-          sched := Bool(true)
-        }
-      }
-    }
-  }
-
-  when (!io.en) {
-    debounce := UInt(0)
-  }
 }
 
 class UARTInterrupts extends Bundle {
@@ -189,106 +39,158 @@ class UARTInterrupts extends Bundle {
   val txwm = Bool()
 }
 
-trait HasUARTTopModuleContents extends HasUARTParameters with HasRegMap {
-  val io: HasUARTTopBundleContents
+abstract class UART(busWidthBytes: Int, val c: UARTParams, divisorInit: Int = 0)
+                   (implicit p: Parameters)
+    extends IORegisterRouter(
+      RegisterRouterParams(
+        name = "serial",
+        compat = Seq("sifive,uart0"), 
+        base = c.address,
+        beatBytes = busWidthBytes),
+      new UARTPortIO)
+    with HasInterruptSources {
 
-  implicit val p: Parameters
-  def params: UARTParams
-  def c = params
+  def nInterrupts = 1
 
-  val txm = Module(new UARTTx(params))
-  val txq = Module(new Queue(txm.io.in.bits, uartNTxEntries))
+  ResourceBinding {
+    Resource(ResourceAnchors.aliases, "uart").bind(ResourceAlias(device.label))
+  }
 
-  val rxm = Module(new UARTRx(params))
-  val rxq = Module(new Queue(rxm.io.out.bits, uartNRxEntries))
+  require(divisorInit != 0, "UART divisor wasn't initialized during instantiation")
+  require(divisorInit >> c.divisorBits == 0, s"UART divisor reg (width $c.divisorBits) not wide enough to hold $divisorInit")
 
-  val divinit = 2 // 434 // (50MHz / 115200)
-  val div = Reg(init = UInt(divinit, uartDivisorBits))
+  lazy val module = new LazyModuleImp(this) {
 
-  private val stopCountBits = log2Up(uartStopBits)
-  private val txCountBits = log2Floor(uartNTxEntries) + 1
-  private val rxCountBits = log2Floor(uartNRxEntries) + 1
+  val txm = Module(new UARTTx(c))
+  val txq = Module(new Queue(txm.io.in.bits, c.nTxEntries))
 
-  val txen = Reg(init = Bool(true))
-  val rxen = Reg(init = Bool(true))
+  val rxm = Module(new UARTRx(c))
+  val rxq = Module(new Queue(rxm.io.out.bits, c.nRxEntries))
+
+  val div = Reg(init = UInt(divisorInit, c.divisorBits))
+
+  private val stopCountBits = log2Up(c.stopBits)
+  private val txCountBits = log2Floor(c.nTxEntries) + 1
+  private val rxCountBits = log2Floor(c.nRxEntries) + 1
+
+  val txen = Reg(init = Bool(false))
+  val rxen = Reg(init = Bool(false))
   val txwm = Reg(init = UInt(0, txCountBits))
   val rxwm = Reg(init = UInt(0, rxCountBits))
   val nstop = Reg(init = UInt(0, stopCountBits))
 
   txm.io.en := txen
   txm.io.in <> txq.io.deq
-  txm.io.div := div
+  txm.io.div := (if (c.withFast) UInt(1) else div)
   txm.io.nstop := nstop
-  io.port.txd := txm.io.out
+  port.txd := txm.io.out
 
-  // printer is wrapped in a module, so that we can provide a clock to it
-  // here, in this trait, we can not give it a clock
-  // since if we extends Module, we will get an Scala inheritance error when TLRegModule tries to extends it
-  val printer = Module(new UARTPrinterWrapper(s"serial${params.address.toInt.toHexString}"))
-  printer.io.valid := txm.io.in.fire()
-  printer.io.data := txm.io.in.bits
+  if (c.withPrinter) {
+    // printer is wrapped in a module, so that we can provide a clock to it
+    // here, in this trait, we can not give it a clock
+    // since if we extends Module, we will get an Scala inheritance error when TLRegModule tries to extends it
+    val printer = Module(new UARTPrinterWrapper(s"serial${c.address.toInt.toHexString}"))
+    printer.io.valid := txm.io.in.fire()
+    printer.io.data := txm.io.in.bits
+  }
 
   rxm.io.en := rxen
-  // disable rx for emulator
-  rxm.io.in := Bool(true)
+  rxm.io.in := (if (c.withRx) port.rxd else Bool(true))
   rxq.io.enq <> rxm.io.out
-  rxm.io.div := div
+  rxm.io.div := (if (c.withFast) UInt(1) else div)
 
   val ie = Reg(init = new UARTInterrupts().fromBits(Bits(0)))
   val ip = Wire(new UARTInterrupts)
 
   ip.txwm := (txq.io.count < txwm)
   ip.rxwm := (rxq.io.count > rxwm)
-  interrupts(0) := Bool(false) //(ip.txwm && ie.txwm) || (ip.rxwm && ie.rxwm)
+  if (c.withInterrupts) {
+    interrupts(0) := (ip.txwm && ie.txwm) || (ip.rxwm && ie.rxwm)
+  } else {
+    interrupts(0) := Bool(false)
+  }
 
   regmap(
-    UARTCtrlRegs.txfifo -> NonBlockingEnqueue(txq.io.enq),
-    UARTCtrlRegs.rxfifo -> NonBlockingDequeue(rxq.io.deq),
+    UARTCtrlRegs.txfifo -> RegFieldGroup("txdata",Some("Transmit data"),
+                           NonBlockingEnqueue(txq.io.enq)),
+    UARTCtrlRegs.rxfifo -> RegFieldGroup("rxdata",Some("Receive data"),
+                           NonBlockingDequeue(rxq.io.deq)),
 
-    UARTCtrlRegs.stat -> Seq(
-      RegField.r(1, rxq.io.count =/= UInt(0)),
-      RegField.r(1, rxq.io.count === UInt(uartNRxEntries)),
-      RegField.r(1, txq.io.count =/= UInt(0)),
-      RegField.r(1, txq.io.count === UInt(uartNTxEntries)),
-      RegField.r(1, UInt(0)),
-      RegField.r(1, UInt(0)),
-      RegField.r(1, UInt(0)),
-      RegField.r(1, UInt(0))
-    ),
+    UARTCtrlRegs.txctrl -> RegFieldGroup("txctrl",Some("Serial transmit control"),Seq(
+      RegField(1, txen,
+               RegFieldDesc("txen","Transmit enable", reset=Some(0))),
+      RegField(stopCountBits, nstop,
+               RegFieldDesc("nstop","Number of stop bits", reset=Some(0))))),
+    UARTCtrlRegs.rxctrl -> Seq(RegField(1, rxen,
+               RegFieldDesc("txen","Receive enable", reset=Some(0)))),
+    UARTCtrlRegs.txmark -> Seq(RegField(txCountBits, txwm,
+               RegFieldDesc("txcnt","Transmit watermark level", reset=Some(0)))),
+    UARTCtrlRegs.rxmark -> Seq(RegField(rxCountBits, rxwm,
+               RegFieldDesc("rxcnt","Receive watermark level", reset=Some(0)))),
 
-  UARTCtrlRegs.ctrl -> Seq(
-    RegField.r(1, UInt(0)),
-    RegField.r(1, UInt(0)),
-    RegField.r(2, UInt(0)),
-    RegField.r(1, UInt(0))
+    UARTCtrlRegs.ie -> RegFieldGroup("ie",Some("Serial interrupt enable"),Seq(
+      RegField(1, ie.txwm,
+               RegFieldDesc("txwm_ie","Transmit watermark interrupt enable", reset=Some(0))),
+      RegField(1, ie.rxwm,
+               RegFieldDesc("rxwm_ie","Receive watermark interrupt enable", reset=Some(0))))),
+
+    UARTCtrlRegs.ip -> RegFieldGroup("ip",Some("Serial interrupt pending"),Seq(
+      RegField.r(1, ip.txwm,
+                 RegFieldDesc("txwm_ip","Transmit watermark interrupt pending", volatile=true)),
+      RegField.r(1, ip.rxwm,
+                 RegFieldDesc("rxwm_ip","Receive watermark interrupt pending", volatile=true)))),
+
+    UARTCtrlRegs.div -> Seq(
+      RegField(c.divisorBits, div,
+                 RegFieldDesc("div","Baud rate divisor",reset=Some(divisorInit))))
   )
+}}
 
+class TLUART(busWidthBytes: Int, params: UARTParams, divinit: Int)(implicit p: Parameters)
+  extends UART(busWidthBytes, params, divinit) with HasTLControlRegMap
 
-/*
-UARTCtrlRegs.txctrl -> Seq(
-  RegField(1, txen),
-  RegField(stopCountBits, nstop)),
-UARTCtrlRegs.rxctrl -> Seq(RegField(1, rxen)),
-UARTCtrlRegs.txmark -> Seq(RegField(txCountBits, txwm)),
-UARTCtrlRegs.rxmark -> Seq(RegField(rxCountBits, rxwm)),
+case class UARTAttachParams(
+  uart: UARTParams,
+  divinit: Int,
+  controlBus: TLBusWrapper,
+  intNode: IntInwardNode,
+  controlXType: ClockCrossingType = NoCrossing,
+  intXType: ClockCrossingType = NoCrossing,
+  mclock: Option[ModuleValue[Clock]] = None,
+  mreset: Option[ModuleValue[Bool]] = None)
+  (implicit val p: Parameters)
 
-UARTCtrlRegs.ie -> Seq(
-  RegField(1, ie.txwm),
-  RegField(1, ie.rxwm)),
+object UART {
+  val nextId = { var i = -1; () => { i += 1; i} }
 
-UARTCtrlRegs.ip -> Seq(
-  RegField.r(1, ip.txwm),
-  RegField.r(1, ip.rxwm)),
+  def attach(params: UARTAttachParams): TLUART = {
+    implicit val p = params.p
+    val name = s"uart_${nextId()}"
+    val cbus =  params.controlBus
+    val uart = LazyModule(new TLUART(cbus.beatBytes, params.uart, params.divinit))
+    uart.suggestName(name)
 
-UARTCtrlRegs.div -> Seq(
-  RegField(uartDivisorBits, div))
-  */
- )
+    cbus.coupleTo(s"slave_named_$name") {
+      uart.controlXing(params.controlXType) := TLFragmenter(cbus.beatBytes, cbus.blockBytes) := _
+    }
+    params.intNode := uart.intXing(params.intXType)
+    InModuleBody { uart.module.clock := params.mclock.map(_.getWrappedValue).getOrElse(cbus.module.clock) }
+    InModuleBody { uart.module.reset := params.mreset.map(_.getWrappedValue).getOrElse(cbus.module.reset) }
+
+    uart
+  }
+
+  def attachAndMakePort(params: UARTAttachParams): ModuleValue[UARTPortIO] = {
+    val uart = attach(params)
+    val uartNode = uart.ioNode.makeSink()(params.p)
+    InModuleBody { uartNode.makeIO()(ValName(uart.name)) }
+  }
+
+  def tieoff(port: UARTPortIO) {
+    port.rxd := UInt(1)
+  }
+
+  def loopback(port: UARTPortIO) {
+    port.rxd := port.txd
+  }
 }
-
-// Magic TL2 Incantation to create a TL2 UART
-// 这边这个结构啥意思啊？看不懂啊？怎么后面会有那么多的括号？
-class TLUART(w: Int, c: UARTParams)(implicit p: Parameters)
-  extends TLRegisterRouter(c.address, "serial", Seq("sifive,uart0"), interrupts = 1, beatBytes = w)(
-  new TLRegBundle(c, _)    with HasUARTTopBundleContents)(
-  new TLRegModule(c, _, _) with HasUARTTopModuleContents)

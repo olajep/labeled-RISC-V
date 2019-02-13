@@ -1,33 +1,25 @@
 // See LICENSE for license details.
 package sifive.blocks.devices.uart
 
-import Chisel._
-import freechips.rocketchip.tilelink._
 import freechips.rocketchip.config.Field
-import freechips.rocketchip.subsystem._
-import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.subsystem.{BaseSubsystem, PeripheryBusKey}
 
-//case object PeripheryUARTKey extends Field[Seq[UARTParams]]
+case object PeripheryUARTKey extends Field[Seq[UARTParams]]
 
 trait HasPeripheryUART { this: BaseSubsystem =>
-  val uartParams = Seq.tabulate(p(NTiles)) { i => //p(PeripheryUARTKey)
-    UARTParams(address = BigInt(0x60000000L + i * 0x1000L))
-  }
-  val uarts = uartParams map { params =>
-    val uart = LazyModule(new TLUART(pbus.beatBytes, params))
-
-    pbus.toVariableWidthSlave(Some("uart")) { uart.node }
-    ibus.fromSync := uart.intnode
-    uart
+  val uartNodes = p(PeripheryUARTKey).map { ps =>
+    val divinit = (p(PeripheryBusKey).frequency / 115200).toInt
+    UART.attach(UARTAttachParams(ps, divinit, pbus, ibus.fromAsync)).ioNode.makeSink
   }
 }
 
-trait HasPeripheryUARTModuleImp extends LazyModuleImp {
+trait HasPeripheryUARTBundle {
+  val uart: Seq[UARTPortIO]
+}
+
+
+trait HasPeripheryUARTModuleImp extends LazyModuleImp with HasPeripheryUARTBundle {
   val outer: HasPeripheryUART
-  val io = IO(new Bundle {
-    val uarts = Vec(outer.uartParams.size, new UARTPortIO)
-  })
-  (io.uarts zip outer.uarts).foreach { case (io, device) =>
-    io <> device.module.io.port
-  }
+  val uart = outer.uartNodes.zipWithIndex.map { case(n,i) => n.makeIO()(ValName(s"uart_$i")) }
 }

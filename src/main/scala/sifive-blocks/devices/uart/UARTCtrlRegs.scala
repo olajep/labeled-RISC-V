@@ -2,12 +2,6 @@
 package sifive.blocks.devices.uart
 
 object UARTCtrlRegs {
-  val rxfifo = 0x00
-  val txfifo = 0x04
-  val stat   = 0x08
-  val ctrl   = 0x0c
-
-/*
   val txfifo = 0x00
   val rxfifo = 0x04
   val txctrl = 0x08
@@ -18,5 +12,4 @@ object UARTCtrlRegs {
   val ie     = 0x10
   val ip     = 0x14
   val div    = 0x18
-  */
 }
