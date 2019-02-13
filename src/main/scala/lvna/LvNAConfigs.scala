@@ -4,11 +4,18 @@ package freechips.rocketchip.system
 
 import freechips.rocketchip.config.{Config, Field}
 import freechips.rocketchip.subsystem._
+import sifive.blocks.devices.uart._
 
 case object UseEmu extends Field[Boolean](false)
 
 class WithEmu extends Config ((site, here, up) => {
   case UseEmu => true
+})
+
+class WithEmuPeripheryUART extends Config ((site, here, up) => {
+  case PeripheryUARTKey =>
+    Seq(UARTParams(address = BigInt(0x60000000), withInterrupts = false,
+                   withRx = false, withPrinter = true, withFast = true))
 })
 
 class LvNAConfigemu extends Config(
@@ -22,6 +29,7 @@ class LvNAConfigemu extends Config(
   ++ new WithNoMMIOPort
   ++ new WithJtagDTM
   ++ new WithDebugSBA
+  ++ new WithEmuPeripheryUART
   ++ new BaseConfig)
 
 class LvNAFPGAConfigzedboard extends Config(
