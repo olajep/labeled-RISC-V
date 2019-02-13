@@ -3,6 +3,7 @@
 package freechips.rocketchip.trace
 
 import Chisel._
+import chisel3.{Input, Output}
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip.tilelink._
@@ -11,9 +12,10 @@ case class TraceCtrlParams(address: BigInt)
 
 trait TraceCtrlBundle
 {
-  val params: TraceCtrlParams
+  //val params: TraceCtrlParams
   val enable = Bool()
   val irq_en = Bool()
+  val clock_shift = UInt(32.W)
   val buf0_addr = UInt(64.W)
   val buf0_mask = UInt(64.W)
 
@@ -31,6 +33,9 @@ trait TraceCtrlModule extends HasRegMap
   val enable = RegInit(UInt(0, width = 1))
   val irq_en = RegInit(UInt(0, width = 1))
   val buf0_full = RegInit(UInt(0, width = 1))
+  val (clock_shift, clock_shift_desc) =
+    DescribedReg(UInt(32.W), "clock_shift", "Log 2 timestamp divider.",
+      reset=Some(0.U(32.W)), volatile=true)
   val (buf0_addr, buf0_addr_desc) =
     DescribedReg(UInt(addrWidth.W), "buf0_addr", "Base address of trace buffer 0. Must have buf0_mask alignment.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
@@ -39,6 +44,7 @@ trait TraceCtrlModule extends HasRegMap
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
   io.enable := enable.toBool
+  io.clock_shift := clock_shift
   io.buf0_addr := buf0_addr
   io.buf0_mask := buf0_mask
 
@@ -58,6 +64,7 @@ trait TraceCtrlModule extends HasRegMap
     0x04 -> Seq( /* status */
       RegField(1, buf0_full,
         RegFieldDesc("buf0_full", "Trace buffer0 full.", reset = Some(0)))),
+    0x08 -> reg(clock_shift, "Log2 Clock Divider", clock_shift_desc),
     0x10 -> reg(buf0_addr, "buf0_addr", buf0_addr_desc),
     0x18 -> reg(buf0_mask, "buf0_mask", buf0_mask_desc)
   )
