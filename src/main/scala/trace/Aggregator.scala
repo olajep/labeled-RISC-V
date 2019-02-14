@@ -10,7 +10,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
 
 class TraceAggregatorBundle(implicit p: Parameters) extends Bundle {
-  val core = new MonitorIO().asInput
+  val coremon = new MonitorIO().asInput
 }
 
 class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer) {
@@ -21,20 +21,21 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
 
   // TODO: flush queues when ctrl.enable is 0
   val filter = Module(new FilterPrivSwitch(mask=1)(before=2, after=0))
-  filter.io.in := io.core.trace
-  filter.io.in.valid := ctrl.enable && io.core.trace.valid && !tracebuf_full
+  filter.io.in := io.coremon.trace
+  filter.io.in.valid := ctrl.enable && io.coremon.trace.valid && !tracebuf_full
 
   val depth: Int = 32
   val queue = Module(new Queue(new TraceIO, depth))
 
   // We silently drop entries if queue overflows
 
-  val core_valid = RegInit(Bool(false))
-  val core = RegEnable(filter.io.out, filter.io.out.valid)
-  core_valid := filter.io.out.valid || (core_valid && !queue.io.enq.ready)
+  val coretrace_valid = RegInit(Bool(false))
+  val coretrace = RegEnable(filter.io.out, filter.io.out.valid)
+  coretrace_valid :=
+    filter.io.out.valid || (coretrace_valid && !queue.io.enq.ready)
 
-  queue.io.enq.valid := core_valid
-  queue.io.enq.bits := core
+  queue.io.enq.valid := coretrace_valid
+  queue.io.enq.bits := coretrace
 
   val (out, edge) = outer.node.out(0)
 
@@ -65,9 +66,9 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
 
   val atrace = Wire(new DefaultTraceFormat())
   //tile.module.core.io.trace_source.regfile.cfg.regno_smode := Wire(17.U(5.W))
-  atrace.register  := core.register
-  atrace.timestamp := core.time >> ctrl.clock_shift
-  atrace.priv      := core.insn.priv
+  atrace.register  := coretrace.register
+  atrace.timestamp := coretrace.time >> ctrl.clock_shift
+  atrace.priv      := coretrace.insn.priv
   data := atrace.asUInt
   //data := queue.io.deq.bits.insn.iaddr
   /* TODO: Require that buf0_addr must be aligned to (trace_size_mask+1) so we can do | instead of + */
@@ -95,13 +96,14 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
   out.b.ready := Bool(true)
 
   if (DEBUG) {
-    val core = filter.io.out
-    when (ctrl.enable && core.valid) {
-       printf("TraceAggregator: C%d: %d [%d]=[%x] pc=[%x] priv=[%x] inst=[%x]  reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
-         core.hartid, core.time(31,0), !core.insn.exception, core.insn.cause,
-         core.insn.iaddr, core.insn.priv, core.insn.insn,
-         core.register, atrace.timestamp, atrace.priv,
-         core.insn.insn)
+    when (out.a.fire()) {
+      val t = coretrace
+      printf("TraceAggregator: C%d: %d [%d]=[%x] pc=[%x] priv=[%x] inst=[%x] " +
+             "reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
+             t.hartid, t.time(31,0), !t.insn.exception, t.insn.cause,
+             t.insn.iaddr, t.insn.priv, t.insn.insn,
+             atrace.register, atrace.timestamp, atrace.priv,
+             t.insn.insn)
     }
   }
 }
