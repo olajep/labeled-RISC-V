@@ -66,9 +66,9 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
 
   val atrace = Wire(new DefaultTraceFormat())
   //tile.module.core.io.trace_source.regfile.cfg.regno_smode := Wire(17.U(5.W))
-  atrace.register  := coretrace.register
-  atrace.timestamp := coretrace.time >> ctrl.clock_shift
-  atrace.priv      := coretrace.insn.priv
+  atrace.register  := queue.io.deq.bits.register
+  atrace.timestamp := queue.io.deq.bits.time >> ctrl.clock_shift
+  atrace.priv      := queue.io.deq.bits.insn.priv
   data := atrace.asUInt
   //data := queue.io.deq.bits.insn.iaddr
   /* TODO: Require that buf0_addr must be aligned to (trace_size_mask+1) so we can do | instead of + */
@@ -97,7 +97,7 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
 
   if (DEBUG) {
     when (out.a.fire()) {
-      val t = coretrace
+      val t = queue.io.deq.bits
       printf("TraceAggregator: C%d: %d [%d]=[%x] pc=[%x] priv=[%x] inst=[%x] " +
              "reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
              t.hartid, t.time(31,0), !t.insn.exception, t.insn.cause,
