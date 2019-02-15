@@ -20,7 +20,7 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
   val tracebuf_full =  RegInit(Bool(false))
 
   // TODO: flush queues when ctrl.enable is 0
-  val filter = Module(new FilterPrivSwitch(mask=1)(before=2, after=0))
+  val filter = Module(new FilterPrivSwitch(before=2, after=0))
   filter.io.in := io.coremon.trace
   filter.io.in.valid := ctrl.enable && io.coremon.trace.valid && !tracebuf_full
 

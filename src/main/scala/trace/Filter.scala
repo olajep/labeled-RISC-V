@@ -68,11 +68,14 @@ class FilterJumps(before: Int = 0, after: Int = 0)(implicit p: Parameters) exten
   }
 }
 
-class FilterPrivSwitch(mask: Int = PRV.M) (before: Int = 1, after: Int = 0) (implicit p: Parameters) extends Filter(before, after)(p) {
+class FilterPrivSwitch(before: Int = 1, after: Int = 0)
+                      (implicit p: Parameters)
+                       extends Filter(before, after)(p)
+{
   def filter(trace: TraceIO): Bool = {
-    val priv = trace.insn.priv & mask.U
-    val prev_priv = RegEnable(priv, trace.valid) /* { reg_debug, reg_mstatus.prv } */
-
-    prev_priv =/= priv
+    val en = trace.valid
+    val priv = trace.insn.priv
+    val prev_priv = RegEnable(priv, en) /* { reg_debug, reg_mstatus.prv } */
+    en && prev_priv =/= priv
   }
 }
