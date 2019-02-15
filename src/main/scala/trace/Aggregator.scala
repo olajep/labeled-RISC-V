@@ -13,38 +13,62 @@ class TraceAggregatorBundle(implicit p: Parameters) extends Bundle {
   val coremon = new MonitorIO().asInput
 }
 
+class TraceAggregatorParams(
+  val ctrl_addr:  Int = 0x50000000,
+  val fifo_depth: Int = 32)
+{
+}
+
 class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer) {
   val DEBUG: Boolean = true
   val io = IO(new TraceAggregatorBundle)
   val ctrl: TraceCtrlBundle = outer.ctrl_module.module.io
   val tracebuf_full =  RegInit(Bool(false))
 
-  // TODO: flush queues when ctrl.enable is 0
+  // Filter stage
+
+  // TODO: flush fifos when ctrl.enable is 0
   val filter = Module(new FilterPrivSwitch(before=2, after=0))
   filter.io.in := io.coremon.trace
   filter.io.in.valid := ctrl.enable && io.coremon.trace.valid && !tracebuf_full
 
-  val depth: Int = 32
-  val queue = Module(new Queue(new TraceIO, depth))
 
-  // We silently drop entries if queue overflows
+  // Outtrace buffer (for TileLink writeback)
+  val fifo = Module(new Queue(new DefaultTraceFormat, outer.params.fifo_depth))
 
-  val coretrace_valid = RegInit(Bool(false))
+  // Convert core trace to output trace format
   val coretrace = RegEnable(filter.io.out, filter.io.out.valid)
-  coretrace_valid :=
-    filter.io.out.valid || (coretrace_valid && !queue.io.enq.ready)
+  val outtrace = Wire(new DefaultTraceFormat)
+  val coretrace_valid = RegNext(filter.io.out.valid)
+  outtrace.register  := coretrace.register
+  outtrace.timestamp := coretrace.time >> ctrl.clock_shift
+  outtrace.priv      := coretrace.insn.priv
 
-  queue.io.enq.valid := coretrace_valid
-  queue.io.enq.bits := coretrace
+  if (DEBUG) {
+    when (coretrace_valid) {
+      val t = coretrace
+      printf("TraceAggregator: C%d: %d [%d]=[%x]=[%x] pc=[%x] priv=[%x] inst=[%x] " +
+             "reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
+             t.hartid, t.time(31,0), !t.insn.exception, t.insn.cause, t.insn.interrupt,
+             t.insn.iaddr, t.insn.priv, t.insn.insn,
+             outtrace.register, outtrace.timestamp, outtrace.priv,
+             t.insn.insn)
+    }
+  }
+
+  // Connect FIFO enq side
+  // Silently drop entries if FIFO overflows
+  fifo.io.enq.valid := coretrace_valid
+  fifo.io.enq.bits  := outtrace
+
+  // TileLink master
 
   val (out, edge) = outer.node.out(0)
 
-  val src = UInt(0)
-  // ??? TODO: Make reg to avoid timing slack
-  val addr = Wire((UInt(0x100004100L, width=64)))
-  //val addr_ready = Reg(Bool())
-  val data = Wire(init = 0.U(32.W))
-  val size: Int = log2Ceil(data.getWidth / 8)
+  val src  =  Wire(UInt(0))
+  val addr = Wire(UInt(width=64))
+  val data = Wire(new DefaultTraceFormat)
+  val size = log2Ceil(data.getWidth / 8)
 
   // "Ring buffer 0"
   val trace_offset = RegInit(UInt(0, width=32))
@@ -64,21 +88,15 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
 
   ctrl.buf0_full := tracebuf_full
 
-  val atrace = Wire(new DefaultTraceFormat())
-  //tile.module.core.io.trace_source.regfile.cfg.regno_smode := Wire(17.U(5.W))
-  atrace.register  := queue.io.deq.bits.register
-  atrace.timestamp := queue.io.deq.bits.time >> ctrl.clock_shift
-  atrace.priv      := queue.io.deq.bits.insn.priv
-  data := atrace.asUInt
-  //data := queue.io.deq.bits.insn.iaddr
-  /* TODO: Require that buf0_addr must be aligned to (trace_size_mask+1) so we can do | instead of + */
+  data := fifo.io.deq.bits
+  /* TODO: Require thatqueue.io.deq.bits buf0_addr must be aligned to (trace_size_mask+1) so we can do | instead of + */
   addr := ctrl.buf0_addr + trace_offset
 
-  val (pflegal, pfbits) = edge.Put(src, addr, size.U, data)
+  val (pflegal, pfbits) = edge.Put(src, addr, size.U, data.asUInt)
 
   val a_gen = Wire(init = Bool(false))
-  a_gen := ctrl.enable && !tracebuf_full && queue.io.deq.valid
-  queue.io.deq.ready := out.a.fire() && queue.io.deq.valid
+  a_gen := ctrl.enable && !tracebuf_full && fifo.io.deq.valid
+  fifo.io.deq.ready := out.a.fire() && fifo.io.deq.valid
 
   out.a.bits := pfbits
 
@@ -94,29 +112,18 @@ class TraceAggregatorModule(outer: TraceAggregator) extends LazyModuleImp(outer)
   out.c.valid := Bool(false)
   out.e.valid := Bool(false)
   out.b.ready := Bool(true)
-
-  if (DEBUG) {
-    when (out.a.fire()) {
-      val t = queue.io.deq.bits
-      printf("TraceAggregator: C%d: %d [%d]=[%x] pc=[%x] priv=[%x] inst=[%x] " +
-             "reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
-             t.hartid, t.time(31,0), !t.insn.exception, t.insn.cause,
-             t.insn.iaddr, t.insn.priv, t.insn.insn,
-             atrace.register, atrace.timestamp, atrace.priv,
-             t.insn.insn)
-    }
-  }
 }
 
 class TraceAggregator(tile: RocketTile, hartid: Int)(implicit p: Parameters)
                       extends LazyModule {
+  val params = new TraceAggregatorParams
   val clientParams =
     TLClientParameters(
       name = s"trace_aggregator_${hartid}",
       sourceId = IdRange(0, 1))
   val node = TLClientNode(Seq(TLClientPortParameters(Seq(clientParams))))
-  val ctrl_module =
-    LazyModule(new TLTraceCtrl(TraceCtrlParams(0x50000000 + hartid * 4096)))
+  val ctrl_module = LazyModule(
+    new TLTraceCtrl(TraceCtrlParams(params.ctrl_addr + hartid * 4096)))
 
   lazy val module = new TraceAggregatorModule(this)
 }
