@@ -31,7 +31,7 @@ trait HasTraceAggregatorTLLogic
 
     val src  = Wire(UInt(0))
     val addr = Wire(UInt(width=64))
-    val data = Wire(new DefaultTraceFormat)
+    val data = Wire(new EcallTrace)
     val size = log2Ceil(data.getWidth / 8)
 
     // Wire up FIFO dequeue flow
@@ -102,15 +102,17 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   filter.io.in.valid := ctrl.enable && io.coremon.trace.valid && !tracebuf_full
 
   // Outtrace buffer (for TileLink writeback)
-  val fifo = Module(new Queue(new DefaultTraceFormat, outer.params.fifo_depth))
+  val fifo = Module(new Queue(new EcallTrace, outer.params.fifo_depth))
 
   // Convert core trace to output trace format
   val coretrace = RegEnable(filter.io.out, filter.io.out.valid)
-  val outtrace = Wire(new DefaultTraceFormat)
+  val outtrace = Wire(new EcallTrace)
   val outtrace_valid = RegNext(filter.io.out.valid)
-  outtrace.register  := coretrace.register
+  outtrace.regval    := coretrace.register
   outtrace.timestamp := coretrace.time >> ctrl.clock_shift
-  outtrace.priv      := coretrace.insn.priv
+  outtrace.kind      := UInt(OKIND.UECALL)
+
+  outtrace.check
 
   // Connect FIFO enq side
   // Silently drop entries if FIFO overflows
@@ -127,7 +129,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
              "reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
              t.hartid, t.time(31,0), !t.insn.exception, t.insn.cause, t.insn.interrupt,
              t.insn.iaddr, t.insn.priv, t.insn.insn,
-             outtrace.register, outtrace.timestamp, outtrace.priv,
+             outtrace.regval, outtrace.timestamp, outtrace.kind,
              t.insn.insn)
     }
   }

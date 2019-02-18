@@ -93,10 +93,51 @@ abstract class TraceSink(implicit p: Parameters) extends CoreModule()(p) {
 //  def io = _io
 }
 
-class DefaultTraceFormat extends Bundle {
-  val timestamp = UInt(width = 20)
-  val register = UInt(width = 10)
-  val priv = UInt(width = 2)
+object OKIND
+{
+  // TODO: We can save a bit if we do this as an Huffmann-like tree instead ???
+  val SZ = 3          // Bits
+  val UECALL    = 0x0 // Ecall from userspace
+  val SECALL    = 0x1 // Ecall from supervisor
+  val IRQ       = 0x2 // Interrupt
+  val RETURN    = 0x3 // Either from Ecall or Interrupt
+  val TIMESTAMP = 0x4 // Full 61-bit timestamp
+}
+
+abstract class OutTrace extends Bundle {
+  // Keep it simple for now, we can do packing later....
+  def check = {
+    require(getWidth % 32 == 0, "sWidth (${getWidth}) not multiple of 32.")
+  }
+}
+
+class EcallTrace extends OutTrace {
+  val kind = UInt(width = OKIND.SZ)
+  val timestamp = UInt(width = 18)
+  val regval = UInt(width = 11)
+}
+
+class SretTrace extends OutTrace {
+  val kind = UInt(width = OKIND.SZ)
+  val timestamp = UInt(width = 18)
+  val regval = UInt(width = 11)
+  val pc = UInt(width = 32)
+}
+
+class InterruptTrace extends OutTrace {
+  val kind = UInt(width = OKIND.SZ)
+  val timestamp = UInt(width = 18)
+  val interrupt = UInt(width = 11)
+}
+
+class IretTrace extends OutTrace {
+  val kind = UInt(width = OKIND.SZ)
+  val timestamp = UInt(width = 29)
+}
+
+class TimestampTrace extends OutTrace {
+  val kind = UInt(width = OKIND.SZ)
+  val timestamp = UInt(width = 61)
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {
