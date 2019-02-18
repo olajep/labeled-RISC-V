@@ -24,13 +24,25 @@ class TraceCfgIO extends Bundle {
 }
 
 
-class MonitorIO(implicit p: Parameters) extends CoreBundle()(p) {
+class MonitorIO()(implicit p: Parameters)
+                  extends CoreBundle()(p)
+{
   val trace = new TraceIO
   val cfg = new TraceCfgIO
 }
 
-class TraceIO(implicit p: Parameters) extends CoreBundle()(p) {
+class OwlInstruction()(implicit p: Parameters)
+                       extends TracedInstruction()(p)
+{
+  def prev_priv = RegEnable(priv, valid)
+  def prev_exception = RegEnable(exception, valid)
+  def prev_interrupt = RegEnable(interrupt, valid)
+  def prev_cause = RegEnable(cause, valid)
+}
 
+class TraceIO()(implicit p: Parameters)
+                extends CoreBundle()(p)
+{
   // What type of trace (should be compile time static?!)
   val kind = UInt(OUTPUT, 8)
 
@@ -38,7 +50,7 @@ class TraceIO(implicit p: Parameters) extends CoreBundle()(p) {
   val valid = Bool(OUTPUT)
 
   val hartid = UInt(OUTPUT, hartIdLen)
-  val insn = new TracedInstruction()(p)
+  val insn = new OwlInstruction()(p)
 
   val time = UInt(OUTPUT, xLen)
 
