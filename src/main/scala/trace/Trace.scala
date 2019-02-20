@@ -93,51 +93,153 @@ abstract class TraceSink(implicit p: Parameters) extends CoreModule()(p) {
 //  def io = _io
 }
 
-object OKIND
-{
-  // TODO: We can save a bit if we do this as an Huffmann-like tree instead ???
-  val SZ = 3          // Bits
-  val UECALL    = 0x0 // Ecall from userspace
-  val SECALL    = 0x1 // Ecall from supervisor
-  val IRQ       = 0x2 // Interrupt
-  val RETURN    = 0x3 // Either from Ecall or Interrupt
-  val TIMESTAMP = 0x4 // Full 61-bit timestamp
-}
-
 abstract class OutTrace extends Bundle {
   // Keep it simple for now, we can do packing later....
   def check = {
-    require(getWidth % 32 == 0, "sWidth (${getWidth}) not multiple of 32.")
+    require(getWidth % 32 == 0, s"Width (${getWidth}) not multiple of 32.")
+    require(getWidth <= OutTrace.max_size, s"Width (${getWidth}) too big.")
   }
+
+  val kind = UInt(width = OutTrace.KIND.SZ)
+  def size: UInt = size(kind)
+}
+
+object OutTrace
+{
+  // NB: Lower bit in KIND indicates 64-bit payload to simplify TileLink logic
+  def size(x: UInt): UInt = Mux(!x(0), UInt(32), UInt(64))
+
+  object KIND
+  {
+    val SZ = 3          // Bits
+    val UECALL    = 0x0 // Usermode ecall
+    val SECALL    = 0x2 // SUpervisor ecall
+    val EXCEPTION = 0x4 // Non-ecall exception / interrupt
+                        // Cause bits of an interrupt will be the irqnr
+    val TIMESTAMP = 0x6 // Full 61-bit timestamp. Need to be inserted if time
+                        // between traces are longer than a relative timestamp.
+    val RETURN    = 0x1 // Subsequent return from either Ecall or Interrupt
+                        // Things will be recursive so the software side can
+                        // figure out which is which. Example:
+                        // user_ecall->super_ecall->interrupt-> ...
+                        // ... interrupt_ret->super_ecall_ret->user_ecall_ret
+  }
+
+  def max_size = 64
 }
 
 class EcallTrace extends OutTrace {
-  val kind = UInt(width = OKIND.SZ)
   val timestamp = UInt(width = 18)
   val regval = UInt(width = 11)
+
+  def apply(trace: TraceIO, timeshift: UInt, uecall: Bool) = {
+    kind := Mux(uecall, UInt(OutTrace.KIND.UECALL), UInt(OutTrace.KIND.SECALL))
+    timestamp := trace.time >> timeshift
+    regval := trace.register
+  }
 }
 
-class SretTrace extends OutTrace {
-  val kind = UInt(width = OKIND.SZ)
+class ReturnTrace extends OutTrace {
   val timestamp = UInt(width = 18)
   val regval = UInt(width = 11)
   val pc = UInt(width = 32)
+
+  def apply(trace: TraceIO, timeshift: UInt) = {
+    kind := UInt(OutTrace.KIND.RETURN)
+    timestamp := trace.time >> timeshift
+    regval := trace.register
+    pc := trace.insn.iaddr
+  }
 }
 
-class InterruptTrace extends OutTrace {
-  val kind = UInt(width = OKIND.SZ)
-  val timestamp = UInt(width = 18)
-  val interrupt = UInt(width = 11)
-}
+class ExceptionTrace extends OutTrace {
+  val timestamp = UInt(width = 21)
+  val cause = UInt(width = 8 /* log2Ceil(1 + CSR.busErrorIntCause) */)
 
-class IretTrace extends OutTrace {
-  val kind = UInt(width = OKIND.SZ)
-  val timestamp = UInt(width = 29)
+  require(CSR.busErrorIntCause == 128)
+
+  def is_interrupt = cause(7).toBool
+  def interrupt = cause(7,0)
+
+  def apply(trace: TraceIO, timeshift: UInt, xcause: UInt) = {
+    kind := UInt(OutTrace.KIND.EXCEPTION)
+    timestamp := trace.time >> timeshift
+    cause := xcause
+  }
 }
 
 class TimestampTrace extends OutTrace {
-  val kind = UInt(width = OKIND.SZ)
-  val timestamp = UInt(width = 61)
+  val timestamp = UInt(width = 29)
+  // ??? TODO: should we timeshift?
+  def apply(trace: TraceIO, timeshift: UInt) = {
+    kind := UInt(OutTrace.KIND.TIMESTAMP)
+    timestamp := trace.time >> timeshift
+  }
+}
+
+class TraceLogicBundle()(implicit p: Parameters) extends CoreBundle()(p)
+{
+  val in = new Bundle {
+    val trace = new TraceIO
+    val timeshift = UInt(width = 6) // 64
+  }
+
+  val out = new Bundle {
+    val bits = UInt(width = OutTrace.max_size)
+    val valid = Bool()
+  }
+  require(OutTrace.max_size == 64, "Review TraceLogicBundle")
+}
+
+class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
+{
+  val io = new TraceLogicBundle
+
+  val insn = io.in.trace.insn
+  val prev_priv = insn.prev_priv
+  val prev_exception = insn.prev_exception
+  val prev_interrupt = insn.prev_interrupt
+  val prev_cause = insn.prev_cause
+
+  val ecall = new EcallTrace
+  val exception = new ExceptionTrace
+  val returnn = new ReturnTrace
+
+  def is_ecall(cause: UInt) = {
+    // This also matches 'rocket.Causes.hypervisor_ecall' which we don't
+    // support but will never hit, assuming we use default config with
+    // usingVM = false.
+    require(!usingVM, "Need to add support for hypervisor ecalls")
+    require(CSR.busErrorIntCause == 128)
+    !cause(7) && cause(3) && !cause(2)
+  }
+
+  // Is this a transition from user to supervisor?
+  // We could have used 'cause' but 'priv' saves 5 bits per comparison
+  // NB: The code assumes that the debug bit, prev_priv(2), is low.
+  val is_UtoS = prev_priv === UInt(PRV.U) && insn.priv === UInt(PRV.S)
+
+  val out_bits = UInt(width = OutTrace.max_size)
+  when (prev_exception) {
+    when (is_ecall(prev_cause)) {
+      // Normal ecall
+      // User to Supervisor or Supervisor to Machine
+      ecall(io.in.trace, io.in.timeshift, is_UtoS)
+      out_bits := ecall.asUInt
+    } .otherwise {
+      // Exception or interrupt
+      exception(io.in.trace, io.in.timeshift, prev_cause)
+      out_bits := exception.asUInt
+    }
+  } .otherwise {
+    // Return from ecall / exception / interrupt
+    returnn(io.in.trace, io.in.timeshift)
+    out_bits := returnn.asUInt
+  }
+
+  // Pipeline
+  io.out.bits  := RegNext(out_bits)
+  io.out.valid := RegNext(io.in.trace.valid)
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {

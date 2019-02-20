@@ -110,7 +110,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   val outtrace_valid = RegNext(filter.io.out.valid)
   outtrace.regval    := coretrace.register
   outtrace.timestamp := coretrace.time >> ctrl.clock_shift
-  outtrace.kind      := UInt(OKIND.UECALL)
+  outtrace.kind      := UInt(OutTrace.KIND.UECALL)
 
   outtrace.check
 
