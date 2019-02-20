@@ -97,7 +97,7 @@ abstract class OutTrace extends Bundle {
   // Keep it simple for now, we can do packing later....
   def check = {
     require(getWidth % 32 == 0, s"Width (${getWidth}) not multiple of 32.")
-    require(getWidth <= OutTrace.max_size, s"Width (${getWidth}) too big.")
+    require(getWidth <= OutTrace.MAX_SIZE, s"Width (${getWidth}) too big.")
   }
 
   val kind = UInt(width = OutTrace.KIND.SZ)
@@ -125,34 +125,46 @@ object OutTrace
                         // ... interrupt_ret->super_ecall_ret->user_ecall_ret
   }
 
-  def max_size = 64
+  def MAX_SIZE = 64
 }
 
-class EcallTrace extends OutTrace {
+class EcallTrace extends OutTrace
+{
   val timestamp = UInt(width = 18)
   val regval = UInt(width = 11)
 
+}
+object EcallTrace
+{
   def apply(trace: TraceIO, timeshift: UInt, uecall: Bool) = {
-    kind := Mux(uecall, UInt(OutTrace.KIND.UECALL), UInt(OutTrace.KIND.SECALL))
-    timestamp := trace.time >> timeshift
-    regval := trace.register
+    val t = new EcallTrace
+    t.kind := Mux(uecall, UInt(OutTrace.KIND.UECALL), UInt(OutTrace.KIND.SECALL))
+    t.timestamp := trace.time >> timeshift
+    t.regval := trace.register
+    t
   }
 }
 
-class ReturnTrace extends OutTrace {
+class ReturnTrace extends OutTrace
+{
   val timestamp = UInt(width = 18)
   val regval = UInt(width = 11)
   val pc = UInt(width = 32)
-
+}
+object ReturnTrace extends OutTrace
+{
   def apply(trace: TraceIO, timeshift: UInt) = {
-    kind := UInt(OutTrace.KIND.RETURN)
-    timestamp := trace.time >> timeshift
-    regval := trace.register
-    pc := trace.insn.iaddr
+    val t = new ReturnTrace
+    t.kind := UInt(OutTrace.KIND.RETURN)
+    t.timestamp := trace.time >> timeshift
+    t.regval := trace.register
+    t.pc := trace.insn.iaddr
+    t
   }
 }
 
-class ExceptionTrace extends OutTrace {
+class ExceptionTrace extends OutTrace
+{
   val timestamp = UInt(width = 21)
   val cause = UInt(width = 8 /* log2Ceil(1 + CSR.busErrorIntCause) */)
 
@@ -160,20 +172,30 @@ class ExceptionTrace extends OutTrace {
 
   def is_interrupt = cause(7).toBool
   def interrupt = cause(7,0)
-
-  def apply(trace: TraceIO, timeshift: UInt, xcause: UInt) = {
-    kind := UInt(OutTrace.KIND.EXCEPTION)
-    timestamp := trace.time >> timeshift
-    cause := xcause
+}
+object ExceptionTrace
+{
+  def apply(trace: TraceIO, timeshift: UInt, cause: UInt) = {
+    val t = new ExceptionTrace
+    t.kind := UInt(OutTrace.KIND.EXCEPTION)
+    t.timestamp := trace.time >> timeshift
+    t.cause := cause
+    t
   }
 }
 
-class TimestampTrace extends OutTrace {
+class TimestampTrace extends OutTrace
+{
   val timestamp = UInt(width = 29)
-  // ??? TODO: should we timeshift?
+}
+object TimestampTrace
+{
   def apply(trace: TraceIO, timeshift: UInt) = {
-    kind := UInt(OutTrace.KIND.TIMESTAMP)
-    timestamp := trace.time >> timeshift
+    // ??? TODO: should we timeshift?
+    val t = new TimestampTrace
+    t.kind := UInt(OutTrace.KIND.TIMESTAMP)
+    t.timestamp := trace.time >> timeshift
+    t
   }
 }
 
@@ -185,10 +207,10 @@ class TraceLogicBundle()(implicit p: Parameters) extends CoreBundle()(p)
   }
 
   val out = new Bundle {
-    val bits = UInt(width = OutTrace.max_size)
+    val bits = UInt(width = OutTrace.MAX_SIZE)
     val valid = Bool()
   }
-  require(OutTrace.max_size == 64, "Review TraceLogicBundle")
+  require(OutTrace.MAX_SIZE == 64, "Review TraceLogicBundle")
 }
 
 class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
@@ -200,10 +222,6 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   val prev_exception = insn.prev_exception
   val prev_interrupt = insn.prev_interrupt
   val prev_cause = insn.prev_cause
-
-  val ecall = new EcallTrace
-  val exception = new ExceptionTrace
-  val returnn = new ReturnTrace
 
   def is_ecall(cause: UInt) = {
     // This also matches 'rocket.Causes.hypervisor_ecall' which we don't
@@ -219,23 +237,16 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   // NB: The code assumes that the debug bit, prev_priv(2), is low.
   val is_UtoS = prev_priv === UInt(PRV.U) && insn.priv === UInt(PRV.S)
 
-  val out_bits = UInt(width = OutTrace.max_size)
-  when (prev_exception) {
-    when (is_ecall(prev_cause)) {
-      // Normal ecall
-      // User to Supervisor or Supervisor to Machine
-      ecall(io.in.trace, io.in.timeshift, is_UtoS)
-      out_bits := ecall.asUInt
-    } .otherwise {
-      // Exception or interrupt
-      exception(io.in.trace, io.in.timeshift, prev_cause)
-      out_bits := exception.asUInt
-    }
-  } .otherwise {
-    // Return from ecall / exception / interrupt
-    returnn(io.in.trace, io.in.timeshift)
-    out_bits := returnn.asUInt
-  }
+  val out_bits = UInt(width = OutTrace.MAX_SIZE)
+  out_bits :=
+    Mux(prev_exception,
+      Mux(is_ecall(prev_cause),
+        // Normal ecall
+        EcallTrace(io.in.trace, io.in.timeshift, is_UtoS),
+        // Exception or interrupt
+        ExceptionTrace(io.in.trace, io.in.timeshift, prev_cause)),
+      // Return from ecall / exception / interrupt
+      ReturnTrace(io.in.trace, io.in.timeshift)).asUInt
 
   // Pipeline
   io.out.bits  := RegNext(out_bits)
