@@ -15,7 +15,8 @@ class RegFileIO(implicit p: Parameters) extends CoreBundle()(p) {
 class RegFileMonitorCfgIO extends Bundle {
   val regno_umode = UInt(width = 5) // Register to track for user mode
   val regno_smode = UInt(width = 5) // Register to track for supervisor mode
-  val regno_hmode = UInt(width = 5) // Register to track for hypervisor mode
+                                    // NB: Hypervisor left out
+  val regno_mmode = UInt(width = 5) // Register to track for hypervisor mode
 }
 
 object RegFileMonitor {
@@ -27,7 +28,7 @@ object RegFileMonitor {
     def trackreg(regno: UInt) = RegEnable(monitor.regfile.data, valid(regno))
     val reg_umode = trackreg(monitor.cfg.regfile.regno_umode)
     val reg_smode = trackreg(monitor.cfg.regfile.regno_smode)
-    val reg_hmode = trackreg(monitor.cfg.regfile.regno_hmode)
+    val reg_mmode = trackreg(monitor.cfg.regfile.regno_mmode)
 
     if (DEBUG) {
       when (valid(monitor.cfg.regfile.regno_umode)) {
@@ -38,14 +39,14 @@ object RegFileMonitor {
         printf("RegFileMonitor: smode regno=[%d] val=[%x]\n",
           monitor.cfg.regfile.regno_smode, monitor.regfile.data)
       }
-      when (valid(monitor.cfg.regfile.regno_hmode)) {
-        printf("RegFileMonitor: hmode regno=[%d] val=[%x]\n",
-          monitor.cfg.regfile.regno_hmode, monitor.regfile.data)
+      when (valid(monitor.cfg.regfile.regno_mmode)) {
+        printf("RegFileMonitor: mmode regno=[%d] val=[%x]\n",
+          monitor.cfg.regfile.regno_mmode, monitor.regfile.data)
       }
     }
 
-    def prvs = Seq(PRV.U,     PRV.S,     PRV.H)
-    def outs = Seq(reg_umode, reg_smode, reg_hmode)
+    def prvs = Seq(PRV.U,     PRV.S,     PRV.M)
+    def outs = Seq(reg_umode, reg_smode, reg_mmode)
     def selects = prvs map (x => monitor.regfile.prv === UInt(x))
     monitor.trace.register := Mux1H(selects, outs)
   }
@@ -74,6 +75,6 @@ object CoreMonitor {
     // TODO: Don't hardcode
     monitor.cfg.regfile.regno_umode := Reg(init = UInt(10, 5)) // return value
     monitor.cfg.regfile.regno_smode := Reg(init = UInt(17, 5)) // syscall
-    monitor.cfg.regfile.regno_hmode := Reg(init = UInt(17, 5)) // trapno
+    monitor.cfg.regfile.regno_mmode := Reg(init = UInt(17, 5)) // trapno
   }
 }
