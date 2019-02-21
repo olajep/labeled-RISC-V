@@ -1,6 +1,7 @@
 package freechips.rocketchip.trace
 
 import Chisel._
+import chisel3.core.{Input, Output}
 
 import freechips.rocketchip.config._
 import freechips.rocketchip.subsystem._
@@ -34,10 +35,6 @@ class MonitorIO()(implicit p: Parameters)
 class OwlInstruction()(implicit p: Parameters)
                        extends TracedInstruction()(p)
 {
-  def prev_priv = RegEnable(priv, valid)
-  def prev_exception = RegEnable(exception, valid)
-  def prev_interrupt = RegEnable(interrupt, valid)
-  def prev_cause = RegEnable(cause, valid)
 }
 
 class TraceIO()(implicit p: Parameters)
@@ -102,6 +99,8 @@ abstract class OutTrace extends Bundle {
 
   val kind = UInt(width = OutTrace.KIND.SZ)
   def size: UInt = size(kind)
+
+  def toBits: UInt // toUInt reverses the order for some reason
 }
 
 object OutTrace
@@ -133,11 +132,12 @@ class EcallTrace extends OutTrace
   val timestamp = UInt(width = 18)
   val regval = UInt(width = 11)
 
+  def toBits = Cat(regval, timestamp, kind)
 }
 object EcallTrace
 {
   def apply(trace: TraceIO, timeshift: UInt, uecall: Bool) = {
-    val t = new EcallTrace
+    val t = Wire(new EcallTrace)
     t.kind := Mux(uecall, UInt(OutTrace.KIND.UECALL), UInt(OutTrace.KIND.SECALL))
     t.timestamp := trace.time >> timeshift
     t.regval := trace.register
@@ -150,11 +150,13 @@ class ReturnTrace extends OutTrace
   val timestamp = UInt(width = 18)
   val regval = UInt(width = 11)
   val pc = UInt(width = 32)
+
+  def toBits = Cat(pc, regval, timestamp, kind)
 }
-object ReturnTrace extends OutTrace
+object ReturnTrace
 {
   def apply(trace: TraceIO, timeshift: UInt) = {
-    val t = new ReturnTrace
+    val t = Wire(new ReturnTrace)
     t.kind := UInt(OutTrace.KIND.RETURN)
     t.timestamp := trace.time >> timeshift
     t.regval := trace.register
@@ -168,6 +170,8 @@ class ExceptionTrace extends OutTrace
   val timestamp = UInt(width = 21)
   val cause = UInt(width = 8 /* log2Ceil(1 + CSR.busErrorIntCause) */)
 
+  def toBits = Cat(cause, timestamp, kind)
+
   require(CSR.busErrorIntCause == 128)
 
   def is_interrupt = cause(7).toBool
@@ -176,7 +180,7 @@ class ExceptionTrace extends OutTrace
 object ExceptionTrace
 {
   def apply(trace: TraceIO, timeshift: UInt, cause: UInt) = {
-    val t = new ExceptionTrace
+    val t = Wire(new ExceptionTrace)
     t.kind := UInt(OutTrace.KIND.EXCEPTION)
     t.timestamp := trace.time >> timeshift
     t.cause := cause
@@ -187,12 +191,14 @@ object ExceptionTrace
 class TimestampTrace extends OutTrace
 {
   val timestamp = UInt(width = 29)
+
+  def toBits = Cat(timestamp, kind)
 }
 object TimestampTrace
 {
   def apply(trace: TraceIO, timeshift: UInt) = {
     // ??? TODO: should we timeshift?
-    val t = new TimestampTrace
+    val t = Wire(new TimestampTrace)
     t.kind := UInt(OutTrace.KIND.TIMESTAMP)
     t.timestamp := trace.time >> timeshift
     t
@@ -201,15 +207,18 @@ object TimestampTrace
 
 class TraceLogicBundle()(implicit p: Parameters) extends CoreBundle()(p)
 {
-  val in = new Bundle {
+  val in = Input(new Bundle {
+    val enable = Bool()
     val trace = new TraceIO
     val timeshift = UInt(width = 6) // 64
-  }
+  })
 
   val out = new Bundle {
     val bits = UInt(width = OutTrace.MAX_SIZE)
     val valid = Bool()
+    val debug = new TraceIO // For debug
   }
+
   require(OutTrace.MAX_SIZE == 64, "Review TraceLogicBundle")
 }
 
@@ -218,16 +227,14 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   val io = new TraceLogicBundle
 
   val insn = io.in.trace.insn
-  val prev_priv = insn.prev_priv
-  val prev_exception = insn.prev_exception
-  val prev_interrupt = insn.prev_interrupt
-  val prev_cause = insn.prev_cause
+  val prev_priv      = RegEnable(insn.priv,      io.in.trace.valid)
+  val prev_exception = RegEnable(insn.exception, io.in.trace.valid)
+  val prev_interrupt = RegEnable(insn.interrupt, io.in.trace.valid)
+  val prev_cause     = RegEnable(insn.cause,     io.in.trace.valid)
 
   def is_ecall(cause: UInt) = {
-    // This also matches 'rocket.Causes.hypervisor_ecall' which we don't
-    // support but will never hit, assuming we use default config with
-    // usingVM = false.
-    require(!usingVM, "Need to add support for hypervisor ecalls")
+    // TODO: Need to add support for hypervisor calls.
+    //require(!usingVM, "Need to add support for hypervisor ecalls")
     require(CSR.busErrorIntCause == 128)
     !cause(7) && cause(3) && !cause(2)
   }
@@ -237,20 +244,26 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   // NB: The code assumes that the debug bit, prev_priv(2), is low.
   val is_UtoS = prev_priv === UInt(PRV.U) && insn.priv === UInt(PRV.S)
 
-  val out_bits = UInt(width = OutTrace.MAX_SIZE)
-  out_bits :=
+  val out_valid = Wire(Bool())
+  val out_bits  = Wire(UInt(width = OutTrace.MAX_SIZE))
+
+  out_valid :=
+    io.in.enable && RegNext(io.in.enable) &&
+    io.in.trace.valid && prev_priv =/= insn.priv
+  out_bits  :=
     Mux(prev_exception,
       Mux(is_ecall(prev_cause),
         // Normal ecall
-        EcallTrace(io.in.trace, io.in.timeshift, is_UtoS),
+        EcallTrace(io.in.trace, io.in.timeshift, is_UtoS).toBits,
         // Exception or interrupt
-        ExceptionTrace(io.in.trace, io.in.timeshift, prev_cause)),
+        ExceptionTrace(io.in.trace, io.in.timeshift, prev_cause).toBits),
       // Return from ecall / exception / interrupt
-      ReturnTrace(io.in.trace, io.in.timeshift)).asUInt
+      ReturnTrace(io.in.trace, io.in.timeshift).toBits)
 
   // Pipeline
+  io.out.valid := RegNext(out_valid)
   io.out.bits  := RegNext(out_bits)
-  io.out.valid := RegNext(io.in.trace.valid)
+  io.out.debug := RegNext(io.in.trace)
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {

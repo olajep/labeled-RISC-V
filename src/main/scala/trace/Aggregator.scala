@@ -31,24 +31,26 @@ trait HasTraceAggregatorTLLogic
 
     val src  = Wire(UInt(0))
     val addr = Wire(UInt(width=64))
-    val data = Wire(new EcallTrace)
-    val size = log2Ceil(data.getWidth / 8)
+    val data = Wire(UInt(width=OutTrace.MAX_SIZE))
+    val size = Wire(UInt(width=log2Ceil(OutTrace.MAX_SIZE)))
 
     // Wire up FIFO dequeue flow
     data := this.fifo.io.deq.bits
     data_valid := this.fifo.io.deq.valid
     this.fifo.io.deq.ready := data_ready
 
+    size := OutTrace.size(data)
+
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
     val trace_size_mask = this.ctrl.buf0_mask
 
-    when (!this.ctrl.enable) {
+    when (!this.enable) {
       trace_offset := 0.U
       this.tracebuf_full := false.B
     } .elsewhen (out.a.fire()) {
-      val incr = (1 << size).U
-      val new_traceoffset = (trace_offset + incr) & trace_size_mask
+      val new_traceoffset = Wire(UInt())
+      new_traceoffset := (trace_offset + size) & trace_size_mask
       trace_offset := new_traceoffset
       this.tracebuf_full := this.tracebuf_full || new_traceoffset === 0.U
       printf("TraceAggregator: trace_offset=%x\n", trace_offset)
@@ -59,10 +61,10 @@ trait HasTraceAggregatorTLLogic
     // (trace_size_mask+1) so we can do | instead of +
     addr := this.ctrl.buf0_addr + trace_offset
 
-    val (pflegal, pfbits) = edge.Put(src, addr, size.U, data.asUInt)
+    val (pflegal, pfbits) = edge.Put(src, addr, size, data.asUInt)
 
     val a_gen = Wire(init = Bool(false))
-    a_gen := this.ctrl.enable && !this.tracebuf_full && data_valid
+    a_gen := this.enable && !this.tracebuf_full && data_valid
     data_ready := out.a.fire() && data_valid
 
     out.a.bits := pfbits
@@ -89,47 +91,42 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   val DEBUG: Boolean = true
   val io = IO(new TraceAggregatorBundle)
   val ctrl: TraceCtrlBundle = outer.ctrl_module.module.io
-  val tracebuf_full =  Reg(Bool())
+  val tracebuf_full = Reg(init = Bool(false))
+
+  val enable = Wire(Bool())
+  enable := ctrl.enable
 
   // Pipeline:
-  // coretrace --> filter --> (coretrace->outtrace) --> fifo --> TileLink
-
-  // Filter stage
-
-  // TODO: flush fifos when ctrl.enable is 0
-  val filter = Module(new FilterPrivSwitch(before=2, after=0))
-  filter.io.in := io.coremon.trace
-  filter.io.in.valid := ctrl.enable && io.coremon.trace.valid && !tracebuf_full
-
-  // Outtrace buffer (for TileLink writeback)
-  val fifo = Module(new Queue(new EcallTrace, outer.params.fifo_depth))
+  // coretrace --> TraceLogic --> FIFO --> TileLink
 
   // Convert core trace to output trace format
-  val coretrace = RegEnable(filter.io.out, filter.io.out.valid)
-  val outtrace = Wire(new EcallTrace)
-  val outtrace_valid = RegNext(filter.io.out.valid)
-  outtrace.regval    := coretrace.register
-  outtrace.timestamp := coretrace.time >> ctrl.clock_shift
-  outtrace.kind      := UInt(OutTrace.KIND.UECALL)
+  val outtrace = Module(new TraceLogic)
 
-  outtrace.check
+  outtrace.io.in.enable       := enable
+  outtrace.io.in.trace        := io.coremon.trace
+  outtrace.io.in.trace.valid  := io.coremon.trace.valid
+
+  // Outtrace buffer (for TileLink writeback)
+  val fifo =
+    Module(new Queue(UInt(width=OutTrace.MAX_SIZE), outer.params.fifo_depth))
 
   // Connect FIFO enq side
   // Silently drop entries if FIFO overflows
-  fifo.io.enq.valid := outtrace_valid
-  fifo.io.enq.bits  := outtrace
+  fifo.io.enq.valid := outtrace.io.out.valid
+  fifo.io.enq.bits  := outtrace.io.out.bits
 
   // Connect TileLink master
   connectTL()
 
   if (DEBUG) {
-    when (outtrace_valid) {
-      val t = coretrace
+    val t = outtrace.io.out.debug
+    when (outtrace.io.out.valid) {
       printf("TraceAggregator: C%d: %d [%d]=[%x]=[%x] pc=[%x] priv=[%x] inst=[%x] " +
-             "reg=[%x] time=[%d] priv=[%x] DASM(%x)\n",
+             "kind=[%x] " +
+             "DASM(%x)\n",
              t.hartid, t.time(31,0), !t.insn.exception, t.insn.cause, t.insn.interrupt,
              t.insn.iaddr, t.insn.priv, t.insn.insn,
-             outtrace.regval, outtrace.timestamp, outtrace.kind,
+             outtrace.io.out.bits(2,0),
              t.insn.insn)
     }
   }
