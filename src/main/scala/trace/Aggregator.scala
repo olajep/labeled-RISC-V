@@ -29,17 +29,19 @@ trait HasTraceAggregatorTLLogic
     val data_valid = Wire(Bool())
     val data_ready = Wire(Bool())
 
-    val src  = Wire(UInt(0))
-    val addr = Wire(UInt(width=64))
-    val data = Wire(UInt(width=OutTrace.MAX_SIZE))
-    val size = Wire(UInt(width=log2Ceil(OutTrace.MAX_SIZE)))
+    val src      = Wire(UInt(0))
+    val addr     = Wire(UInt(width=64))
+    val data     = Wire(UInt(width=OutTrace.MAX_SIZE))
+    val size     = Wire(UInt())
+    val lg2_size = Wire(UInt())
 
     // Wire up FIFO dequeue flow
     data := this.fifo.io.deq.bits
     data_valid := this.fifo.io.deq.valid
     this.fifo.io.deq.ready := data_ready
 
-    size := OutTrace.size(data)
+    size    := OutTrace.size(data)
+    lg2_size := OutTrace.lg2_size(data)
 
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
@@ -61,7 +63,7 @@ trait HasTraceAggregatorTLLogic
     // (trace_size_mask+1) so we can do | instead of +
     addr := this.ctrl.buf0_addr + trace_offset
 
-    val (pflegal, pfbits) = edge.Put(src, addr, size, data.asUInt)
+    val (pflegal, pfbits) = edge.Put(src, addr, lg2_size, data.asUInt)
 
     val a_gen = Wire(init = Bool(false))
     a_gen := this.enable && !this.tracebuf_full && data_valid
