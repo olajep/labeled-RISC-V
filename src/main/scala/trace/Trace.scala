@@ -99,6 +99,7 @@ abstract class OutTrace extends Bundle {
 
   val kind = UInt(width = OutTrace.KIND.SZ)
   //def width: UInt = size(kind)
+  def is_wide: UInt = is_wide(kind)
   def size: UInt = size(kind)
   def lg2_size: UInt = lg2_size(kind) // TileLink size
 
@@ -110,6 +111,7 @@ object OutTrace
   // NB: Lower bit in KIND indicates 64-bit payload to simplify TileLink logic
   //def width(kind: UInt): UInt =
   //  Mux(!kind(0), UInt(32), UInt(64))
+  def is_wide(kind: UInt): Bool = kind(0)
   def size(kind: UInt): UInt =
     Mux(!kind(0), UInt(32/8), UInt(64/8))
   def lg2_size(kind: UInt): UInt =

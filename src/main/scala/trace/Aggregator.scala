@@ -19,6 +19,43 @@ class TraceAggregatorParams(
 {
 }
 
+// 64 bit aligner
+class Aligner(implicit p: Parameters) extends Module
+{
+  val io = new Bundle {
+    val in = new Bundle {
+      val valid = Bool()
+      val wide = Bool()
+      val bits = UInt(width=64)
+    }.asInput
+    val out = new Bundle {
+      val valid = Bool()
+      val bits = UInt(width=64)
+    }
+  }
+
+  val buf_valid = RegInit(Bool(false))
+  val buf = Reg(UInt(width=32))
+
+  when (io.in.valid) {
+    buf_valid := !io.in.wide ^ buf_valid
+    buf := Mux(buf_valid, io.in.bits(63, 32), io.in.bits(31, 0))
+  }
+
+  val out_bits = Wire(UInt(width=64))
+  val out_valid = Wire(init = Bool(false))
+  when (io.in.valid) {
+    out_valid := buf_valid || io.in.wide
+    out_bits  := Mux(buf_valid, Cat(io.in.bits(31, 0), buf), io.in.bits)
+  } . otherwise {
+    out_valid := Bool(false)
+  }
+
+  // Pipeline
+  io.out.valid := RegNext(out_valid)
+  io.out.bits  := RegNext(out_bits)
+}
+
 trait HasTraceAggregatorTLLogic
 {
   this: TraceAggregatorModule =>
@@ -32,16 +69,12 @@ trait HasTraceAggregatorTLLogic
     val src      = Wire(UInt(0))
     val addr     = Wire(UInt(width=64))
     val data     = Wire(UInt(width=OutTrace.MAX_SIZE))
-    val size     = Wire(UInt())
-    val lg2_size = Wire(UInt())
+    val size     = log2Ceil(data.getWidth / 8)
 
     // Wire up FIFO dequeue flow
     data := this.fifo.io.deq.bits
     data_valid := this.fifo.io.deq.valid
     this.fifo.io.deq.ready := data_ready
-
-    size    := OutTrace.size(data)
-    lg2_size := OutTrace.lg2_size(data)
 
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
@@ -51,11 +84,10 @@ trait HasTraceAggregatorTLLogic
       trace_offset := 0.U
       this.tracebuf_full := false.B
     } .elsewhen (out.a.fire()) {
-      val new_traceoffset = Wire(UInt())
-      new_traceoffset := (trace_offset + size) & trace_size_mask
+      val incr = (1 << size).U
+      val new_traceoffset = (trace_offset + incr) & trace_size_mask
       trace_offset := new_traceoffset
       this.tracebuf_full := this.tracebuf_full || new_traceoffset === 0.U
-      printf("TraceAggregator: trace_offset=%x\n", trace_offset)
     }
     this.ctrl.buf0_full := this.tracebuf_full
 
@@ -63,7 +95,7 @@ trait HasTraceAggregatorTLLogic
     // (trace_size_mask+1) so we can do | instead of +
     addr := this.ctrl.buf0_addr + trace_offset
 
-    val (pflegal, pfbits) = edge.Put(src, addr, lg2_size, data.asUInt)
+    val (pflegal, pfbits) = edge.Put(src, addr, size.U, data.asUInt)
 
     val a_gen = Wire(init = Bool(false))
     a_gen := this.enable && !this.tracebuf_full && data_valid
@@ -83,6 +115,12 @@ trait HasTraceAggregatorTLLogic
     out.c.valid := Bool(false)
     out.e.valid := Bool(false)
     out.b.ready := Bool(true)
+
+    if (this.DEBUG) {
+      when (out.a.fire()) {
+        printf("TraceAggregatorTLLogic: addr=[%x] offset=[%x] data=[%x]\n", addr, trace_offset, data)
+      }
+    }
   }
 }
 
@@ -99,7 +137,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   enable := ctrl.enable
 
   // Pipeline:
-  // coretrace --> TraceLogic --> FIFO --> TileLink
+  // coretrace --> TraceLogic --> Aligner --> FIFO --> TileLink
 
   // Convert core trace to output trace format
   val outtrace = Module(new TraceLogic)
@@ -108,14 +146,19 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   outtrace.io.in.trace        := io.coremon.trace
   outtrace.io.in.trace.valid  := io.coremon.trace.valid
 
+  val aligner = Module(new Aligner)
+  aligner.io.in.valid := outtrace.io.out.valid
+  aligner.io.in.bits  := outtrace.io.out.bits
+  aligner.io.in.wide  := OutTrace.is_wide(aligner.io.in.bits)
+
   // Outtrace buffer (for TileLink writeback)
   val fifo =
     Module(new Queue(UInt(width=OutTrace.MAX_SIZE), outer.params.fifo_depth))
 
   // Connect FIFO enq side
   // Silently drop entries if FIFO overflows
-  fifo.io.enq.valid := outtrace.io.out.valid
-  fifo.io.enq.bits  := outtrace.io.out.bits
+  fifo.io.enq.valid := aligner.io.out.valid
+  fifo.io.enq.bits  := aligner.io.out.bits
 
   // Connect TileLink master
   connectTL()
