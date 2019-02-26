@@ -188,11 +188,14 @@ class ExceptionTrace extends OutTrace
 }
 object ExceptionTrace
 {
-  def apply(trace: TraceIO, timeshift: UInt, cause: UInt) = {
+  def apply(trace: TraceIO, timeshift: UInt, cause: UInt, interrupt: Bool) = {
     val t = Wire(new ExceptionTrace)
     t.kind := UInt(OutTrace.KIND.EXCEPTION)
     t.timestamp := trace.time >> timeshift
-    t.cause := cause
+    // HACK: Interrupt bit not carried over from Rocket core cause bits in
+    // TracedInstruction even though the highest bit is reserved for that
+    // purpose???
+    t.cause := Cat(interrupt.asUInt, cause(6, 0))
     t
   }
 }
@@ -265,7 +268,8 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
         // Normal ecall
         EcallTrace(io.in.trace, io.in.timeshift, is_UtoS).toBits,
         // Exception or interrupt
-        ExceptionTrace(io.in.trace, io.in.timeshift, prev_cause).toBits),
+        ExceptionTrace(io.in.trace, io.in.timeshift, prev_cause,
+                       prev_interrupt).toBits),
       // Return from ecall / exception / interrupt
       ReturnTrace(io.in.trace, io.in.timeshift).toBits)
 
