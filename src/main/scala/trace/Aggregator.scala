@@ -141,11 +141,12 @@ class TraceAggregatorModule(val outer: TraceAggregator)
 
   // Convert core trace to output trace format
   val outtrace = Module(new TraceLogic)
-
   outtrace.io.in.enable       := enable
   outtrace.io.in.trace        := io.coremon.trace
   outtrace.io.in.trace.valid  := io.coremon.trace.valid
+  outtrace.io.in.timeshift    := UInt(0)
 
+  // Pack data in 64-bit chunks for TL write
   val aligner = Module(new Aligner)
   aligner.io.in.valid := outtrace.io.out.valid
   aligner.io.in.bits  := outtrace.io.out.bits

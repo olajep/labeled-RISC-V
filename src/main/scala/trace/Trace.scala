@@ -212,7 +212,8 @@ object TimestampTrace
     // ??? TODO: should we timeshift?
     val t = Wire(new TimestampTrace)
     t.kind := UInt(OutTrace.KIND.TIMESTAMP)
-    t.timestamp := trace.time >> timeshift
+    // Strip off the lower 3 bits since we only got 29 for the timestamp
+    t.timestamp := trace.time >> (timeshift + 3.U)
     t
   }
 }
@@ -236,6 +237,7 @@ class TraceLogicBundle()(implicit p: Parameters) extends CoreBundle()(p)
 
 class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
 {
+  val DEBUG: Boolean = true
   val io = new TraceLogicBundle
 
   val insn = io.in.trace.insn
@@ -256,13 +258,13 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   // NB: The code assumes that the debug bit, prev_priv(2), is low.
   val is_UtoS = prev_priv === UInt(PRV.U) && insn.priv === UInt(PRV.S)
 
-  val out_valid = Wire(Bool())
-  val out_bits  = Wire(UInt(width = OutTrace.MAX_SIZE))
+  val trace_valid = Wire(Bool())
+  val trace_bits  = Wire(UInt(width = OutTrace.MAX_SIZE))
 
-  out_valid :=
+  trace_valid :=
     io.in.enable && RegNext(io.in.enable) &&
     io.in.trace.valid && prev_priv =/= insn.priv
-  out_bits  :=
+  trace_bits :=
     Mux(prev_exception,
       Mux(is_ecall(prev_cause),
         // Normal ecall
@@ -273,10 +275,38 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
       // Return from ecall / exception / interrupt
       ReturnTrace(io.in.trace, io.in.timeshift).toBits)
 
+  // We need a buffer for normal traces in case we need to inject
+  // a timestamp
+  val fifo = Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1))
+  fifo.io.enq.valid := trace_valid
+  fifo.io.enq.bits  := trace_bits
+
+  // We need to inject timestamp traces since normal traces are only 18+ bits
+  // of timestamp information.
+  // TODO: Now we inject a timestamp every ~262k clock. There is room for
+  // improvement: track prev insn time and only inject if needed?
+  val timestamp_counter = RegInit(UInt(0, width=18))
+  timestamp_counter := Mux(io.in.enable, timestamp_counter + 1.U, 0.U)
+  val timestamp_inject =
+    io.in.enable && RegNext(!io.in.enable) || // On enable ...
+    timestamp_counter === ((1 << 18) - 1).U   // ... or on wrap
+  val timestamp_bits = TimestampTrace(io.in.trace, io.in.timeshift).toBits
+
+  val out_valid = io.in.enable && (fifo.io.deq.valid || timestamp_inject)
+  val out_bits  = Mux(timestamp_inject, timestamp_bits, fifo.io.deq.bits)
+  fifo.io.deq.ready := !timestamp_inject
+
   // Pipeline
   io.out.valid := RegNext(out_valid)
   io.out.bits  := RegNext(out_bits)
   io.out.debug := RegNext(io.in.trace)
+
+  if (DEBUG) {
+    when (timestamp_inject) {
+      printf("TraceAggregator: Timestamp %d %d\n",
+             io.in.trace.time, io.in.trace.time >> (io.in.timeshift + 3.U))
+    }
+  }
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {
