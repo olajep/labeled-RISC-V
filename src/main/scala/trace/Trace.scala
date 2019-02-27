@@ -286,7 +286,8 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   // TODO: Now we inject a timestamp every ~262k clock. There is room for
   // improvement: track prev insn time and only inject if needed?
   val timestamp_counter = RegInit(UInt(0, width=18))
-  timestamp_counter := Mux(io.in.enable, timestamp_counter + 1.U, 0.U)
+  timestamp_counter :=
+    Mux(io.in.enable && !io.in.trace.valid, timestamp_counter + 1.U, 0.U)
   val timestamp_inject =
     io.in.enable && RegNext(!io.in.enable) || // On enable ...
     timestamp_counter === ((1 << 18) - 1).U   // ... or on wrap
