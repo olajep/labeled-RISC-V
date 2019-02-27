@@ -121,16 +121,16 @@ object OutTrace
   {
     val SZ = 3          // Bits
     val UECALL    = 0x0 // Usermode ecall
-    val SECALL    = 0x2 // SUpervisor ecall
-    val EXCEPTION = 0x4 // Non-ecall exception / interrupt
-                        // Cause bits of an interrupt will be the irqnr
-    val TIMESTAMP = 0x6 // Full 61-bit timestamp. Need to be inserted if time
-                        // between traces are longer than a relative timestamp.
     val RETURN    = 0x1 // Subsequent return from either Ecall or Interrupt
                         // Things will be recursive so the software side can
                         // figure out which is which. Example:
                         // user_ecall->super_ecall->interrupt-> ...
                         // ... interrupt_ret->super_ecall_ret->user_ecall_ret
+    val SECALL    = 0x2 // Supervisor ecall
+    val TIMESTAMP = 0x3 // Full 61-bit timestamp. Need to be inserted if time
+                        // between traces are longer than a relative timestamp.
+    val EXCEPTION = 0x4 // Non-ecall exception / interrupt
+                        // Cause bits of an interrupt will be the irqnr
   }
 
   def MAX_SIZE = 64
@@ -202,18 +202,16 @@ object ExceptionTrace
 
 class TimestampTrace extends OutTrace
 {
-  val timestamp = UInt(width = 29)
+  val timestamp = UInt(width = 61)
 
   def toBits = Cat(timestamp, kind)
 }
 object TimestampTrace
 {
-  def apply(trace: TraceIO, timeshift: UInt) = {
-    // ??? TODO: should we timeshift?
+  def apply(trace: TraceIO) = {
     val t = Wire(new TimestampTrace)
     t.kind := UInt(OutTrace.KIND.TIMESTAMP)
-    // Strip off the lower 3 bits since we only got 29 for the timestamp
-    t.timestamp := trace.time >> (timeshift + 3.U)
+    t.timestamp := trace.time
     t
   }
 }
@@ -283,15 +281,15 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
 
   // We need to inject timestamp traces since normal traces are only 18+ bits
   // of timestamp information.
-  // TODO: Now we inject a timestamp every ~262k clock. There is room for
-  // improvement: track prev insn time and only inject if needed?
   val timestamp_counter = RegInit(UInt(0, width=18))
+  val timestamp_inc =
+    io.in.enable && !trace_valid
   timestamp_counter :=
-    Mux(io.in.enable && !io.in.trace.valid, timestamp_counter + 1.U, 0.U)
+    Mux(timestamp_inc, timestamp_counter + 1.U, 0.U)
   val timestamp_inject =
     io.in.enable && RegNext(!io.in.enable) || // On enable ...
     timestamp_counter === ((1 << 18) - 1).U   // ... or on wrap
-  val timestamp_bits = TimestampTrace(io.in.trace, io.in.timeshift).toBits
+  val timestamp_bits = TimestampTrace(io.in.trace).toBits
 
   val out_valid = io.in.enable && (fifo.io.deq.valid || timestamp_inject)
   val out_bits  = Mux(timestamp_inject, timestamp_bits, fifo.io.deq.bits)
