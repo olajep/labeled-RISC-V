@@ -176,10 +176,11 @@ object ReturnTrace
 
 class ExceptionTrace extends OutTrace
 {
-  val timestamp = UInt(width = 21)
+  val timestamp = UInt(width = 18)
+  val reserved = UInt(width = 3)
   val cause = UInt(width = 8 /* log2Ceil(1 + CSR.busErrorIntCause) */)
 
-  def toBits = Cat(cause, timestamp, kind)
+  def toBits = Cat(cause, reserved, timestamp, kind)
 
   require(CSR.busErrorIntCause == 128)
 
@@ -192,6 +193,7 @@ object ExceptionTrace
     val t = Wire(new ExceptionTrace)
     t.kind := UInt(OutTrace.KIND.EXCEPTION)
     t.timestamp := trace.time >> timeshift
+    t.reserved := UInt(0)
     // HACK: Interrupt bit not carried over from Rocket core cause bits in
     // TracedInstruction even though the highest bit is reserved for that
     // purpose???
