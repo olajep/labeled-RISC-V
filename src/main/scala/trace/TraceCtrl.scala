@@ -43,10 +43,11 @@ trait TraceCtrlModule extends HasRegMap
     DescribedReg(UInt(addrWidth.W), "buf0_mask", "Size of trace buffer 0 minus 1.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
-  io.enable := enable.toBool
-  io.clock_shift := clock_shift
-  io.buf0_addr := buf0_addr
-  io.buf0_mask := buf0_mask
+  // Pipeline outputs
+  io.enable      := RegNext(enable.toBool)
+  io.clock_shift := RegNext(clock_shift)
+  io.buf0_addr   := RegNext(buf0_addr)
+  io.buf0_mask   := RegNext(buf0_mask)
 
   buf0_full := io.buf0_full.asUInt
 

@@ -92,7 +92,7 @@ trait HasTraceAggregatorTLLogic
       trace_offset := new_traceoffset
       this.tracebuf_full := this.tracebuf_full || new_traceoffset === 0.U
     }
-    this.ctrl.buf0_full := this.tracebuf_full
+    this.ctrl.buf0_full := RegNext(this.tracebuf_full)
 
     // TODO: Require thatqueue.io.deq.bits buf0_addr must be aligned to
     // (trace_size_mask+1) so we can do | instead of +
