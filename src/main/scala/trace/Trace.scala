@@ -283,17 +283,19 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
 
   // We need to inject timestamp traces since normal traces are only 18+ bits
   // of timestamp information.
-  val timestamp_counter = RegInit(UInt(0, width=18))
-  val timestamp_inc =
-    io.in.enable && !trace_valid
-  timestamp_counter :=
-    Mux(timestamp_inc, timestamp_counter + 1.U, 0.U)
-  val timestamp_inject =
-    io.in.enable && RegNext(!io.in.enable) || // On enable ...
-    timestamp_counter === ((1 << 18) - 1).U   // ... or on wrap
+  // TODO: Only inject timestamps when difference between two traces are
+  // > 2^18 time. Note that io.in.trace.time is in a different clock domain
+  // so we can't just use a simple counter.
+  val this_time = io.in.trace.time(17, 0)
+  val prev_time = RegNext(this_time)
+  val time_wrap = prev_time === ((1 << 18) - 1).U && this_time === 0.U
+  val timestamp_inject = Reg(init = Bool(false))
   val timestamp_bits = TimestampTrace(io.in.trace).toBits
+  timestamp_inject := // On first enable "edge" or on wrap.
+    io.in.enable && (RegNext(!io.in.enable) || time_wrap)
 
-  val out_valid = io.in.enable && (fifo.io.deq.valid || timestamp_inject)
+  // Select
+  val out_valid = io.in.enable && (timestamp_inject || fifo.io.deq.valid)
   val out_bits  = Mux(timestamp_inject, timestamp_bits, fifo.io.deq.bits)
   fifo.io.deq.ready := !timestamp_inject
 
