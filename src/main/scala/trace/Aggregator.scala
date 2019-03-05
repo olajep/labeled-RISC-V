@@ -19,11 +19,12 @@ class TraceAggregatorParams(
 {
 }
 
-// 64 bit aligner
-class Aligner(implicit p: Parameters) extends Module
+// 64 bit packer
+class Packer(implicit p: Parameters) extends Module
 {
   val io = new Bundle {
     val in = new Bundle {
+      val reset = Bool()
       val valid = Bool()
       val wide = Bool()
       val bits = UInt(width=64)
@@ -37,14 +38,16 @@ class Aligner(implicit p: Parameters) extends Module
   val buf_valid = RegInit(Bool(false))
   val buf = Reg(UInt(width=32))
 
-  when (io.in.valid) {
+  when (io.in.reset) {
+    buf_valid := false.B
+  } .elsewhen (io.in.valid) {
     buf_valid := !io.in.wide ^ buf_valid
     buf := Mux(buf_valid, io.in.bits(63, 32), io.in.bits(31, 0))
   }
 
   val out_bits = Wire(UInt(width=64))
   val out_valid = Wire(init = Bool(false))
-  when (io.in.valid) {
+  when (!io.in.reset && io.in.valid) {
     out_valid := buf_valid || io.in.wide
     out_bits  := Mux(buf_valid, Cat(io.in.bits(31, 0), buf), io.in.bits)
   } . otherwise {
@@ -74,7 +77,7 @@ trait HasTraceAggregatorTLLogic
     // Wire up FIFO dequeue flow
     data := this.fifo.io.deq.bits
     data_valid := this.fifo.io.deq.valid
-    this.fifo.io.deq.ready := data_ready
+    this.fifo.io.deq.ready := data_ready || this.flush
 
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
@@ -134,23 +137,26 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   val tracebuf_full = Reg(init = Bool(false))
 
   val enable = Wire(Bool())
+  val flush = Wire(Bool())
   enable := ctrl.enable
+  flush := !enable || tracebuf_full
 
   // Pipeline:
-  // coretrace --> TraceLogic --> Aligner --> FIFO --> TileLink
+  // coretrace --> TraceLogic --> Packer --> FIFO --> TileLink
 
   // Convert core trace to output trace format
   val outtrace = Module(new TraceLogic)
-  outtrace.io.in.enable       := enable
+  outtrace.io.in.enable       := !flush
   outtrace.io.in.trace        := io.coremon.trace
-  outtrace.io.in.trace.valid  := io.coremon.trace.valid
+  outtrace.io.in.trace.valid  := !flush && io.coremon.trace.valid
   outtrace.io.in.timeshift    := UInt(0)
 
   // Pack data in 64-bit chunks for TL write
-  val aligner = Module(new Aligner)
-  aligner.io.in.valid := outtrace.io.out.valid
-  aligner.io.in.bits  := outtrace.io.out.bits
-  aligner.io.in.wide  := OutTrace.is_wide(aligner.io.in.bits)
+  val packer = Module(new Packer)
+  packer.io.in.reset := flush
+  packer.io.in.valid := !flush && outtrace.io.out.valid
+  packer.io.in.bits  := outtrace.io.out.bits
+  packer.io.in.wide  := OutTrace.is_wide(packer.io.in.bits)
 
   // Outtrace buffer (for TileLink writeback)
   val fifo =
@@ -158,10 +164,11 @@ class TraceAggregatorModule(val outer: TraceAggregator)
 
   // Connect FIFO enq side
   // Silently drop entries if FIFO overflows
-  fifo.io.enq.valid := aligner.io.out.valid
-  fifo.io.enq.bits  := aligner.io.out.bits
+  fifo.io.enq.valid := !flush && packer.io.out.valid
+  fifo.io.enq.bits  := packer.io.out.bits
 
   // Connect TileLink master
+  // connectTL() will connect to the FIFO's dequeue side
   connectTL()
 
   if (DEBUG) {
