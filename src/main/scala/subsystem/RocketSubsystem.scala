@@ -58,7 +58,7 @@ trait HasRocketTiles extends HasTiles
     sbus.fromMaster(Some("trace_aggregator"), BufferParams.flow) { rocket.aggregator.node }
     // Connect trace control device to system bus
     sbus.control_bus.toVariableWidthSlave(Some("trace_ctrl")) { rocket.aggregator.ctrl_module.node }
-    /* ibus.fromSync := rocket.aggregator.ctrl_module.intnode */
+    ibus.fromSync := rocket.aggregator.ctrl_module.intnode
 
     rocket
   }

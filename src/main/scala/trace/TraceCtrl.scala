@@ -30,7 +30,7 @@ trait TraceCtrlModule extends HasRegMap
 {
   val params: TraceCtrlParams
   val io: TraceCtrlBundle
-  /* val interrupts: Vec[Bool] */
+  val interrupts: Vec[Bool]
   val addrWidth = 64 /* xLen */
 
   val enable = RegInit(UInt(0, width = 1))
@@ -46,17 +46,11 @@ trait TraceCtrlModule extends HasRegMap
     DescribedReg(UInt(addrWidth.W), "buf0_mask", "Size of trace buffer 0 minus 1.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
-  // Pipeline outputs
-  io.out.enable      := RegNext(enable.toBool)
-  io.out.clock_shift := RegNext(clock_shift)
-  io.out.buf0_addr   := RegNext(buf0_addr)
-  io.out.buf0_mask   := RegNext(buf0_mask)
-
+  // Wire up inputs
   buf0_full := io.in.buf0_full.asUInt
 
-
-  // TODO: Implement interrupts
-  /* interrupts := Vec.tabulate(1) { i => false.B } */
+  // Connect interrupts
+  interrupts := Vec.tabulate(1) { i => irq_en.toBool && buf0_full.toBool /* || buf1_full */ }
 
   def reg(r: UInt, gn: String, d: RegFieldDesc) = RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
   regmap(
@@ -72,10 +66,16 @@ trait TraceCtrlModule extends HasRegMap
     0x10 -> reg(buf0_addr, "buf0_addr", buf0_addr_desc),
     0x18 -> reg(buf0_mask, "buf0_mask", buf0_mask_desc)
   )
+
+  // Pipeline outputs
+  io.out.enable      := RegNext(enable.toBool)
+  io.out.clock_shift := RegNext(clock_shift)
+  io.out.buf0_addr   := RegNext(buf0_addr)
+  io.out.buf0_mask   := RegNext(buf0_mask)
 }
 
 // Create a concrete TL2 version of the abstract TraceCtrl slave
 class TLTraceCtrl(params: TraceCtrlParams)(implicit p: Parameters)
-  extends TLRegisterRouter(params.address, "tracectrl", Seq("clemson,trace-ctrl"), 0 /* 1 interrupt */, beatBytes = 8)(
+  extends TLRegisterRouter(params.address, "tracectrl", Seq("clemson,trace-ctrl"), 1 /* interrupt */, beatBytes = 8)(
   new TLRegBundle(params, _)    with TraceCtrlBundle)(
   new TLRegModule(params, _, _) with TraceCtrlModule)
