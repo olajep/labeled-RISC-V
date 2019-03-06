@@ -13,13 +13,16 @@ case class TraceCtrlParams(address: BigInt)
 trait TraceCtrlBundle
 {
   //val params: TraceCtrlParams
-  val enable = Bool()
-  val irq_en = Bool()
-  val clock_shift = UInt(32.W)
-  val buf0_addr = UInt(64.W)
-  val buf0_mask = UInt(64.W)
-
-  val buf0_full = Input(Bool())
+  val in = new Bundle {
+    val buf0_full = Input(Bool())
+  }
+  val out = new Bundle {
+    val enable = Bool()
+    val irq_en = Bool()
+    val clock_shift = UInt(32.W)
+    val buf0_addr = UInt(64.W)
+    val buf0_mask = UInt(64.W)
+  }
 }
 
 trait TraceCtrlModule extends HasRegMap
@@ -44,12 +47,12 @@ trait TraceCtrlModule extends HasRegMap
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
   // Pipeline outputs
-  io.enable      := RegNext(enable.toBool)
-  io.clock_shift := RegNext(clock_shift)
-  io.buf0_addr   := RegNext(buf0_addr)
-  io.buf0_mask   := RegNext(buf0_mask)
+  io.out.enable      := RegNext(enable.toBool)
+  io.out.clock_shift := RegNext(clock_shift)
+  io.out.buf0_addr   := RegNext(buf0_addr)
+  io.out.buf0_mask   := RegNext(buf0_mask)
 
-  buf0_full := io.buf0_full.asUInt
+  buf0_full := io.in.buf0_full.asUInt
 
 
   // TODO: Implement interrupts

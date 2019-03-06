@@ -81,7 +81,7 @@ trait HasTraceAggregatorTLLogic
 
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
-    val trace_size_mask = this.ctrl.buf0_mask
+    val trace_size_mask = this.ctrl.out.buf0_mask
 
     when (!this.enable) {
       trace_offset := 0.U
@@ -92,11 +92,11 @@ trait HasTraceAggregatorTLLogic
       trace_offset := new_traceoffset
       this.tracebuf_full := this.tracebuf_full || new_traceoffset === 0.U
     }
-    this.ctrl.buf0_full := RegNext(this.tracebuf_full)
+    this.ctrl.in.buf0_full := RegNext(this.tracebuf_full)
 
     // TODO: Require thatqueue.io.deq.bits buf0_addr must be aligned to
     // (trace_size_mask+1) so we can do | instead of +
-    addr := this.ctrl.buf0_addr + trace_offset
+    addr := this.ctrl.out.buf0_addr + trace_offset
 
     val (pflegal, pfbits) = edge.Put(src, addr, size.U, data.asUInt)
 
@@ -138,7 +138,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
 
   val enable = Wire(Bool())
   val flush = Wire(Bool())
-  enable := ctrl.enable
+  enable := ctrl.out.enable
   flush := !enable || tracebuf_full
 
   // Pipeline:
