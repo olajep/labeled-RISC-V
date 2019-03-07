@@ -81,27 +81,49 @@ trait HasTraceAggregatorTLLogic
 
     // "Ring buffer 0"
     val trace_offset = RegInit(UInt(0, width=32))
-    val trace_size_mask = this.ctrl.out.buf0_mask
+
+    val tracebuf_sel = RegInit(Bool(false))
+    val tracebuf_addr = Mux(!tracebuf_sel,
+                            this.ctrl.out.buf0_addr,
+                            this.ctrl.out.buf1_addr)
+    val trace_size_mask = Mux(!tracebuf_sel,
+                              this.ctrl.out.buf0_mask,
+                              this.ctrl.out.buf1_mask)
+    val tracebuf_switch = RegInit(Bool(false))
 
     when (!this.enable) {
+      this.tracebuf0_full := false.B
+      this.tracebuf1_full := false.B
+      tracebuf_sel := false.B /* 0 */
       trace_offset := 0.U
-      this.tracebuf_full := false.B
+      tracebuf_switch := false.B
+    } .elsewhen (tracebuf_switch) {
+      when (!tracebuf_sel) { this.tracebuf0_full := true.B }
+      when ( tracebuf_sel) { this.tracebuf1_full := true.B }
+      tracebuf_sel := ~tracebuf_sel
+      trace_offset := 0.U
+      tracebuf_switch := false.B
     } .elsewhen (out.a.fire()) {
       val incr = (1 << size).U
       val new_traceoffset = (trace_offset + incr) & trace_size_mask
       trace_offset := new_traceoffset
-      this.tracebuf_full := this.tracebuf_full || new_traceoffset === 0.U
+      tracebuf_switch := new_traceoffset === 0.U
     }
-    this.ctrl.in.buf0_full := RegNext(this.tracebuf_full)
+    this.ctrl.in.buf0_full := RegNext(this.tracebuf0_full)
+    this.ctrl.in.buf1_full := RegNext(this.tracebuf1_full)
 
-    // TODO: Require thatqueue.io.deq.bits buf0_addr must be aligned to
+    // TODO: Require that tracebuf_addr must be aligned to
     // (trace_size_mask+1) so we can do | instead of +
-    addr := this.ctrl.out.buf0_addr + trace_offset
+    addr := tracebuf_addr + trace_offset
 
     val (pflegal, pfbits) = edge.Put(src, addr, size.U, data.asUInt)
 
     val a_gen = Wire(init = Bool(false))
-    a_gen := this.enable && !this.tracebuf_full && data_valid
+    a_gen := this.enable &&
+             !RegNext(out.a.fire()) && // Need one clock to adjust if
+                                       // switching buffers
+             !this.tracebuf_full &&
+             data_valid
     data_ready := out.a.fire() && data_valid
 
     out.a.bits := pfbits
@@ -134,7 +156,9 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   val DEBUG: Boolean = true
   val io = IO(new TraceAggregatorBundle)
   val ctrl: TraceCtrlBundle = outer.ctrl_module.module.io
-  val tracebuf_full = Reg(init = Bool(false))
+  val tracebuf0_full = Reg(init = Bool(false))
+  val tracebuf1_full = Reg(init = Bool(false))
+  val tracebuf_full = this.tracebuf0_full && this.tracebuf1_full
 
   val enable = Wire(Bool())
   val flush = Wire(Bool())
