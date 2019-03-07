@@ -23,8 +23,10 @@ trait TraceCtrlBundle
     val clock_shift = UInt(32.W)
     val buf0_addr = UInt(64.W)
     val buf0_mask = UInt(64.W)
+    val buf0_full_clear = Bool()
     val buf1_addr = UInt(64.W)
     val buf1_mask = UInt(64.W)
+    val buf1_full_clear = Bool()
   }
 }
 
@@ -39,7 +41,9 @@ trait TraceCtrlModule extends HasRegMap
   val enable = RegInit(UInt(0, width = 1))
   val irq_en = RegInit(UInt(0, width = 1))
   val buf0_full = RegInit(UInt(0, width = 1))
+  val buf0_full_clear = Wire(init=Bool(false))
   val buf1_full = RegInit(UInt(0, width = 1))
+  val buf1_full_clear = Wire(init=Bool(false))
   val (clock_shift, clock_shift_desc) =
     DescribedReg(UInt(32.W), "clock_shift", "Log 2 timestamp divider.",
       reset=Some(0.U(32.W)), volatile=true)
@@ -72,10 +76,22 @@ trait TraceCtrlModule extends HasRegMap
       RegField(1, irq_en,
         RegFieldDesc("irq_en", "Trace buffer full interrupt.", reset = Some(0)))),
     0x04 -> Seq( /* status */
-      RegField(1, buf0_full,
-        RegFieldDesc("buf0_full", "Trace buffer0 full.", reset = Some(0))),
-      RegField(1, buf1_full,
-        RegFieldDesc("buf1_full", "Trace buffer1 full.", reset = Some(0)))),
+      RegField(1,
+        RegReadFn { _ => (Bool(true), buf0_full) },
+        RegWriteFn { (valid, clear) =>
+          buf0_full_clear := (valid & clear)
+          Bool(true)
+        },
+        RegFieldDesc("buf0_full", "Trace buffer0 full.",
+                     reset = Some(0), volatile=true)),
+      RegField(1,
+        RegReadFn { _ => (Bool(true), buf1_full) },
+        RegWriteFn { (valid, clear) =>
+          buf1_full_clear := (valid & clear)
+          Bool(true)
+        },
+        RegFieldDesc("buf1_full", "Trace buffer1 full.",
+                     reset = Some(0), volatile=true))),
     0x08 -> reg(clock_shift, "Log2 Clock Divider", clock_shift_desc),
     0x10 -> reg(buf0_addr, "buf0_addr", buf0_addr_desc),
     0x18 -> reg(buf0_mask, "buf0_mask", buf0_mask_desc),
@@ -84,12 +100,14 @@ trait TraceCtrlModule extends HasRegMap
   )
 
   // Pipeline outputs
-  io.out.enable      := RegNext(enable.toBool)
-  io.out.clock_shift := RegNext(clock_shift)
-  io.out.buf0_addr   := RegNext(buf0_addr)
-  io.out.buf0_mask   := RegNext(buf0_mask)
-  io.out.buf1_addr   := RegNext(buf1_addr)
-  io.out.buf1_mask   := RegNext(buf1_mask)
+  io.out.enable          := RegNext(enable.toBool)
+  io.out.clock_shift     := RegNext(clock_shift)
+  io.out.buf0_addr       := RegNext(buf0_addr)
+  io.out.buf0_mask       := RegNext(buf0_mask)
+  io.out.buf0_full_clear := RegNext(buf0_full_clear)
+  io.out.buf1_addr       := RegNext(buf1_addr)
+  io.out.buf1_mask       := RegNext(buf1_mask)
+  io.out.buf1_full_clear := RegNext(buf1_full_clear)
 }
 
 // Create a concrete TL2 version of the abstract TraceCtrl slave

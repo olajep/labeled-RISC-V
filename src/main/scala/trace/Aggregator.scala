@@ -91,6 +91,10 @@ trait HasTraceAggregatorTLLogic
                               this.ctrl.out.buf1_mask)
     val tracebuf_switch = RegInit(Bool(false))
 
+    this.tracebuf0_full :=  this.tracebuf0_full &&
+                           !this.ctrl.out.buf0_full_clear
+    this.tracebuf1_full :=  this.tracebuf1_full &&
+                           !this.ctrl.out.buf1_full_clear
     when (!this.enable) {
       this.tracebuf0_full := false.B
       this.tracebuf1_full := false.B
