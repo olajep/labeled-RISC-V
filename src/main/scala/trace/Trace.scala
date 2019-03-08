@@ -177,10 +177,10 @@ object ReturnTrace
 class ExceptionTrace extends OutTrace
 {
   val timestamp = UInt(width = 18)
-  val reserved = UInt(width = 3)
   val cause = UInt(width = 8 /* log2Ceil(1 + CSR.busErrorIntCause) */)
+  val reserved = UInt(width = 3)
 
-  def toBits = Cat(cause, reserved, timestamp, kind)
+  def toBits = Cat(reserved, cause, timestamp, kind)
 
   require(CSR.busErrorIntCause == 128)
 
