@@ -277,7 +277,7 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
 
   // We need a buffer for normal traces in case we need to inject
   // a timestamp
-  val fifo = Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1))
+  val fifo = Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1, flow=true))
   fifo.io.enq.valid := trace_valid
   fifo.io.enq.bits  := trace_bits
 
@@ -289,7 +289,7 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   val this_time = io.in.trace.time(17, 0)
   val prev_time = RegNext(this_time)
   val time_wrap = prev_time === ((1 << 18) - 1).U && this_time === 0.U
-  val timestamp_inject = Reg(init = Bool(false))
+  val timestamp_inject = Wire(init = Bool(false))
   val timestamp_bits = TimestampTrace(io.in.trace).toBits
   timestamp_inject := // On first enable "edge" or on wrap.
     io.in.enable && (RegNext(!io.in.enable) || time_wrap)
