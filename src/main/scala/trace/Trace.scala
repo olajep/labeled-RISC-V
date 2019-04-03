@@ -131,6 +131,12 @@ object OutTrace
                         // between traces are longer than a relative timestamp.
     val EXCEPTION = 0x4 // Non-ecall exception / interrupt
                         // Cause bits of an interrupt will be the irqnr
+    val MSBPC     = 0x5 // Most significat bits of PC.
+                        // Only injected if MSB bits of PC changed since last
+                        // return trace from PRIV level
+                        // Must follow directly after a return trace.
+                        // Valid sequences:
+                        //   [RETURN, MSBPC] or [RETURN, TIMESTAMP, MSBPC]
   }
 
   def MAX_SIZE = 64
@@ -170,6 +176,30 @@ object ReturnTrace
     t.timestamp := trace.time >> timeshift
     t.regval := trace.register
     t.pc := trace.insn.iaddr
+    t
+  }
+}
+
+class MSBPCTrace extends OutTrace
+{
+  val timestamp = UInt(width = 18)
+  val priv = UInt(width = PRV.SZ)
+  val reserved = UInt(width = 9)
+  val msb_pc = UInt(width = 32)
+
+  def toBits = Cat(msb_pc, reserved, priv, timestamp, kind)
+}
+object MSBPCTrace
+{
+  def apply(trace: TraceIO, timeshift: UInt, pc_width: Int) = {
+    val t        = Wire(new MSBPCTrace)
+    t.kind      := UInt(OutTrace.KIND.MSBPC)
+    t.timestamp := trace.time >> timeshift
+    t.priv      := trace.insn.priv
+    t.reserved  := 0.U
+    // NB: vaddr is a signed integer so software needs to sign extend it
+    t.msb_pc    := Cat(0.U((64 - pc_width) min 32),
+                       trace.insn.iaddr(pc_width - 1, 32))
     t
   }
 }
@@ -261,6 +291,13 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   val trace_valid = Wire(Bool())
   val trace_bits  = Wire(UInt(width = OutTrace.MAX_SIZE))
 
+  // We need a buffer for normal traces in case we need to inject
+  // a timestamp
+  val trace_fifo =
+    Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1, flow=true))
+  trace_fifo.io.enq.valid := trace_valid
+  trace_fifo.io.enq.bits  := trace_bits
+
   trace_valid :=
     io.in.enable && RegNext(io.in.enable) &&
     io.in.trace.valid && prev_priv =/= insn.priv
@@ -275,11 +312,28 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
       // Return from ecall / exception / interrupt
       ReturnTrace(io.in.trace, io.in.timeshift).toBits)
 
-  // We need a buffer for normal traces in case we need to inject
-  // a timestamp
-  val fifo = Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1, flow=true))
-  fifo.io.enq.valid := trace_valid
-  fifo.io.enq.bits  := trace_bits
+
+  // MSBPC traces
+  val msbpc = insn.iaddr(coreMaxAddrBits-1, 32)
+  val prev_user_msbpc_en  = Wire(init=Bool(false))
+  val prev_super_msbpc_en = Wire(init=Bool(false))
+  val inject_msbpc_trace  = Wire(init=Bool(false))
+  prev_user_msbpc_en  := inject_msbpc_trace && insn.priv === UInt(PRV.U)
+  prev_super_msbpc_en := inject_msbpc_trace && insn.priv === UInt(PRV.S)
+  val prev_user_msbpc  = RegEnable(msbpc, prev_user_msbpc_en)
+  val prev_super_msbpc = RegEnable(msbpc, prev_super_msbpc_en)
+  val prev_msbpc_mux = Mux(insn.priv === UInt(PRV.U),
+                           prev_user_msbpc, prev_super_msbpc)
+  inject_msbpc_trace :=
+    trace_valid && !prev_exception && prev_msbpc_mux =/= msbpc
+
+  // We need a buffer for MSBPC traces since they have the lowest priority
+  val msbpc_fifo =
+    Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1, flow=true))
+  msbpc_fifo.io.enq.valid := inject_msbpc_trace
+  msbpc_fifo.io.enq.bits :=
+    MSBPCTrace(io.in.trace, io.in.timeshift, coreMaxAddrBits).toBits
+
 
   // We need to inject timestamp traces since normal traces are only 18+ bits
   // of timestamp information.
@@ -289,27 +343,29 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   val this_time = io.in.trace.time(17, 0)
   val prev_time = RegNext(this_time)
   val time_wrap = prev_time === ((1 << 18) - 1).U && this_time === 0.U
-  val timestamp_inject = Wire(init = Bool(false))
+  val inject_timestamp = Wire(init = Bool(false))
   val timestamp_bits = TimestampTrace(io.in.trace).toBits
-  timestamp_inject := // On first enable "edge" or on wrap.
+  inject_timestamp := // On first enable "edge" or on wrap.
     io.in.enable && (RegNext(!io.in.enable) || time_wrap)
 
-  // Select
-  val out_valid = io.in.enable && (timestamp_inject || fifo.io.deq.valid)
-  val out_bits  = Mux(timestamp_inject, timestamp_bits, fifo.io.deq.bits)
-  fifo.io.deq.ready := !timestamp_inject
+  // Select. Priority: timestamp > normal > msbpc
+  val out_bits  = Mux(inject_timestamp,
+                      timestamp_bits,
+                      Mux(trace_fifo.io.deq.valid,
+                          trace_fifo.io.deq.bits,
+                          msbpc_fifo.io.deq.bits))
+  val out_valid =
+    io.in.enable &&
+    (inject_timestamp || trace_fifo.io.deq.valid || msbpc_fifo.io.deq.valid)
+
+  // Flow control FIFOs
+  trace_fifo.io.deq.ready := !inject_timestamp
+  msbpc_fifo.io.deq.ready := !inject_timestamp && !trace_fifo.io.deq.valid
 
   // Pipeline
   io.out.valid := RegNext(out_valid)
   io.out.bits  := RegNext(out_bits)
   io.out.debug := RegNext(io.in.trace)
-
-  if (DEBUG) {
-    when (timestamp_inject) {
-      printf("TraceAggregator: Timestamp %d %d\n",
-             io.in.trace.time, io.in.trace.time >> (io.in.timeshift + 3.U))
-    }
-  }
 }
 
 //abstract class TraceSink(io: CoreTraceIO) extends Module {
