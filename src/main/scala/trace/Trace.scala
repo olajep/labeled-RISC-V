@@ -314,14 +314,15 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
 
 
   // MSBPC traces
-  val msbpc = insn.iaddr(coreMaxAddrBits-1, 32)
+  val reset_msbpc = !io.in.enable
+  val msbpc = Mux(reset_msbpc, 0.U, insn.iaddr(coreMaxAddrBits-1, 32))
   val prev_user_msbpc_en  = Wire(init=Bool(false))
   val prev_super_msbpc_en = Wire(init=Bool(false))
   val inject_msbpc_trace  = Wire(init=Bool(false))
   prev_user_msbpc_en  := inject_msbpc_trace && insn.priv === UInt(PRV.U)
   prev_super_msbpc_en := inject_msbpc_trace && insn.priv === UInt(PRV.S)
-  val prev_user_msbpc  = RegEnable(msbpc, prev_user_msbpc_en)
-  val prev_super_msbpc = RegEnable(msbpc, prev_super_msbpc_en)
+  val prev_user_msbpc  = RegEnable(msbpc, reset_msbpc || prev_user_msbpc_en)
+  val prev_super_msbpc = RegEnable(msbpc, reset_msbpc || prev_super_msbpc_en)
   val prev_msbpc_mux = Mux(insn.priv === UInt(PRV.U),
                            prev_user_msbpc, prev_super_msbpc)
   inject_msbpc_trace :=
