@@ -131,12 +131,12 @@ object OutTrace
                         // between traces are longer than a relative timestamp.
     val EXCEPTION = 0x4 // Non-ecall exception / interrupt
                         // Cause bits of an interrupt will be the irqnr
-    val MSBPC     = 0x5 // Most significat bits of PC.
+    val PCHI     = 0x5  // Most significat bits of PC.
                         // Only injected if MSB bits of PC changed since last
                         // return trace from PRIV level
                         // Must follow directly after a return trace.
                         // Valid sequences:
-                        //   [RETURN, MSBPC] or [RETURN, TIMESTAMP, MSBPC]
+                        //   [RETURN, PCHI] or [RETURN, TIMESTAMP, PCHI]
   }
 
   def MAX_SIZE = 64
@@ -180,7 +180,7 @@ object ReturnTrace
   }
 }
 
-class MSBPCTrace extends OutTrace
+class PCHITrace extends OutTrace
 {
   val timestamp = UInt(width = 18)
   val priv = UInt(width = PRV.SZ)
@@ -189,11 +189,11 @@ class MSBPCTrace extends OutTrace
 
   def toBits = Cat(msb_pc, reserved, priv, timestamp, kind)
 }
-object MSBPCTrace
+object PCHITrace
 {
   def apply(trace: TraceIO, timeshift: UInt, pc_width: Int) = {
-    val t        = Wire(new MSBPCTrace)
-    t.kind      := UInt(OutTrace.KIND.MSBPC)
+    val t        = Wire(new PCHITrace)
+    t.kind      := UInt(OutTrace.KIND.PCHI)
     t.timestamp := trace.time >> timeshift
     t.priv      := trace.insn.priv
     t.reserved  := 0.U
@@ -313,27 +313,26 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
       ReturnTrace(io.in.trace, io.in.timeshift).toBits)
 
 
-  // MSBPC traces
-  val reset_msbpc = !io.in.enable
-  val msbpc = Mux(reset_msbpc, 0.U, insn.iaddr(coreMaxAddrBits-1, 32))
-  val prev_user_msbpc_en  = Wire(init=Bool(false))
-  val prev_super_msbpc_en = Wire(init=Bool(false))
-  val inject_msbpc_trace  = Wire(init=Bool(false))
-  prev_user_msbpc_en  := inject_msbpc_trace && insn.priv === UInt(PRV.U)
-  prev_super_msbpc_en := inject_msbpc_trace && insn.priv === UInt(PRV.S)
-  val prev_user_msbpc  = RegEnable(msbpc, reset_msbpc || prev_user_msbpc_en)
-  val prev_super_msbpc = RegEnable(msbpc, reset_msbpc || prev_super_msbpc_en)
-  val prev_msbpc_mux = Mux(insn.priv === UInt(PRV.U),
-                           prev_user_msbpc, prev_super_msbpc)
-  inject_msbpc_trace :=
-    trace_valid && !prev_exception && prev_msbpc_mux =/= msbpc
+  // PCHI traces
+  val reset_pchi = !io.in.enable
+  val pchi = Mux(reset_pchi, 0.U, insn.iaddr(coreMaxAddrBits-1, 32))
+  val prev_user_pchi_en  = Wire(init=Bool(false))
+  val prev_super_pchi_en = Wire(init=Bool(false))
+  val inject_pchi_trace  = Wire(init=Bool(false))
+  prev_user_pchi_en  := inject_pchi_trace && insn.priv === UInt(PRV.U)
+  prev_super_pchi_en := inject_pchi_trace && insn.priv === UInt(PRV.S)
+  val prev_user_pchi  = RegEnable(pchi, reset_pchi || prev_user_pchi_en)
+  val prev_super_pchi = RegEnable(pchi, reset_pchi || prev_super_pchi_en)
+  val prev_pchi_mux = Mux(insn.priv === UInt(PRV.U),
+                          prev_user_pchi, prev_super_pchi)
+  inject_pchi_trace := trace_valid && !prev_exception && prev_pchi_mux =/= pchi
 
-  // We need a buffer for MSBPC traces since they have the lowest priority
-  val msbpc_fifo =
+  // We need a buffer for PCHI traces since they have the lowest priority
+  val pchi_fifo =
     Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1, flow=true))
-  msbpc_fifo.io.enq.valid := inject_msbpc_trace
-  msbpc_fifo.io.enq.bits :=
-    MSBPCTrace(io.in.trace, io.in.timeshift, coreMaxAddrBits).toBits
+  pchi_fifo.io.enq.valid := inject_pchi_trace
+  pchi_fifo.io.enq.bits :=
+    PCHITrace(io.in.trace, io.in.timeshift, coreMaxAddrBits).toBits
 
 
   // We need to inject timestamp traces since normal traces are only 18+ bits
@@ -349,19 +348,19 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   inject_timestamp := // On first enable "edge" or on wrap.
     io.in.enable && (RegNext(!io.in.enable) || time_wrap)
 
-  // Select. Priority: timestamp > normal > msbpc
+  // Select. Priority: timestamp > normal > pchi
   val out_bits  = Mux(inject_timestamp,
                       timestamp_bits,
                       Mux(trace_fifo.io.deq.valid,
                           trace_fifo.io.deq.bits,
-                          msbpc_fifo.io.deq.bits))
+                          pchi_fifo.io.deq.bits))
   val out_valid =
     io.in.enable &&
-    (inject_timestamp || trace_fifo.io.deq.valid || msbpc_fifo.io.deq.valid)
+    (inject_timestamp || trace_fifo.io.deq.valid || pchi_fifo.io.deq.valid)
 
   // Flow control FIFOs
   trace_fifo.io.deq.ready := !inject_timestamp
-  msbpc_fifo.io.deq.ready := !inject_timestamp && !trace_fifo.io.deq.valid
+  pchi_fifo.io.deq.ready  := !inject_timestamp && !trace_fifo.io.deq.valid
 
   // Pipeline
   io.out.valid := RegNext(out_valid)
