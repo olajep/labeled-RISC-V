@@ -20,6 +20,7 @@ trait TraceCtrlBundle
   val out = new Bundle {
     val enable = Bool()
     val irq_en = Bool()
+    val ignore_illegal_insn = Bool()
     val clock_shift = UInt(32.W)
     val buf0_addr = UInt(64.W)
     val buf0_mask = UInt(64.W)
@@ -40,6 +41,7 @@ trait TraceCtrlModule extends HasRegMap
 
   val enable = RegInit(UInt(0, width = 1))
   val irq_en = RegInit(UInt(0, width = 1))
+  val ignore_illegal_insn = RegInit(UInt(0, width = 1))
   val buf0_full = RegInit(UInt(0, width = 1))
   val buf0_full_clear = Wire(init=Bool(false))
   val buf1_full = RegInit(UInt(0, width = 1))
@@ -74,7 +76,9 @@ trait TraceCtrlModule extends HasRegMap
       RegField(1, enable,
         RegFieldDesc("enable", "Enable: Set to one to enable tracing.", reset = Some(0))),
       RegField(1, irq_en,
-        RegFieldDesc("irq_en", "Trace buffer full interrupt.", reset = Some(0)))),
+        RegFieldDesc("irq_en", "Trace buffer full interrupt.", reset = Some(0))),
+      RegField(1, ignore_illegal_insn,
+        RegFieldDesc("ignore_illegal_insn", "Don't trace illegal instructions.", reset = Some(0)))),
     0x04 -> Seq( /* status */
       RegField(1,
         RegReadFn { _ => (Bool(true), buf0_full) },
@@ -100,14 +104,16 @@ trait TraceCtrlModule extends HasRegMap
   )
 
   // Pipeline outputs
-  io.out.enable          := RegNext(enable.toBool)
-  io.out.clock_shift     := RegNext(clock_shift)
-  io.out.buf0_addr       := RegNext(buf0_addr)
-  io.out.buf0_mask       := RegNext(buf0_mask)
-  io.out.buf0_full_clear := RegNext(buf0_full_clear)
-  io.out.buf1_addr       := RegNext(buf1_addr)
-  io.out.buf1_mask       := RegNext(buf1_mask)
-  io.out.buf1_full_clear := RegNext(buf1_full_clear)
+  io.out.enable              := RegNext(enable.toBool)
+  io.out.irq_en              := RegNext(irq_en.toBool)
+  io.out.ignore_illegal_insn := RegNext(ignore_illegal_insn.toBool)
+  io.out.clock_shift         := RegNext(clock_shift)
+  io.out.buf0_addr           := RegNext(buf0_addr)
+  io.out.buf0_mask           := RegNext(buf0_mask)
+  io.out.buf0_full_clear     := RegNext(buf0_full_clear)
+  io.out.buf1_addr           := RegNext(buf1_addr)
+  io.out.buf1_mask           := RegNext(buf1_mask)
+  io.out.buf1_full_clear     := RegNext(buf1_full_clear)
 }
 
 // Create a concrete TL2 version of the abstract TraceCtrl slave

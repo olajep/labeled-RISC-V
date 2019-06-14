@@ -254,6 +254,7 @@ class TraceLogicBundle()(implicit p: Parameters) extends CoreBundle()(p)
     val enable = Bool()
     val trace = new TraceIO
     val timeshift = UInt(width = 6) // 64
+    val ignore_illegal_insn = Bool()
   })
 
   val out = new Bundle {
@@ -282,6 +283,8 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
     require(CSR.busErrorIntCause == 128)
     !cause(7) && cause(3) && !cause(2)
   }
+  def is_illegal_insn(cause: UInt) = cause === UInt(Causes.illegal_instruction)
+
 
   // Is this a transition from user to supervisor?
   // We could have used 'cause' but 'priv' saves 5 bits per comparison
@@ -298,9 +301,28 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   trace_fifo.io.enq.valid := trace_valid
   trace_fifo.io.enq.bits  := trace_bits
 
+  val enable = io.in.enable && RegNext(io.in.enable)
+  val trigger = io.in.trace.valid && prev_priv =/= insn.priv
+
+  val was_illegal = Reg(Vec(1 << PRV.SZ, Bool()))
+  when (!enable || !io.in.ignore_illegal_insn) {
+    was_illegal := Vec.tabulate(1 << PRV.SZ) { _ => Bool(false) }
+  } .elsewhen (trigger) {
+    when (prev_exception) {
+      was_illegal(prev_priv) := is_illegal_insn(prev_cause)
+    } .otherwise {
+      was_illegal(insn.priv) := Bool(false)
+    }
+  }
+
+  val illegal_insn_filter =
+    io.in.ignore_illegal_insn &&
+    Mux(prev_exception,
+        is_illegal_insn(prev_cause),
+        was_illegal(insn.priv))
+
   trace_valid :=
-    io.in.enable && RegNext(io.in.enable) &&
-    io.in.trace.valid && prev_priv =/= insn.priv
+    enable && trigger && !illegal_insn_filter
   trace_bits :=
     Mux(prev_exception,
       Mux(is_ecall(prev_cause),
