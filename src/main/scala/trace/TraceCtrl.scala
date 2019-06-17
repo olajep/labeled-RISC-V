@@ -8,11 +8,10 @@ import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip.tilelink._
 
-case class TraceCtrlParams(address: BigInt)
+case class TraceCtrlParams(address: BigInt, nharts: Int)
 
-trait TraceCtrlBundle
+class TraceCtrlOneBundle extends Bundle
 {
-  //val params: TraceCtrlParams
   val in = new Bundle {
     val buf0_full = Input(Bool())
     val buf1_full = Input(Bool())
@@ -29,6 +28,12 @@ trait TraceCtrlBundle
     val buf1_mask = UInt(64.W)
     val buf1_full_clear = Bool()
   }
+}
+
+trait TraceCtrlBundle
+{
+  val params: TraceCtrlParams
+  val harts = Vec(params.nharts, new TraceCtrlOneBundle())
 }
 
 trait TraceCtrlModule extends HasRegMap
@@ -63,14 +68,18 @@ trait TraceCtrlModule extends HasRegMap
       reset=Some(0.U(addrWidth.W)), volatile=true)
 
   // Wire up inputs
-  buf0_full := io.in.buf0_full.asUInt
-  buf1_full := io.in.buf1_full.asUInt
+  buf0_full := io.harts(0).in.buf0_full.asUInt
+  buf1_full := io.harts(0).in.buf1_full.asUInt
+
+  val any_buf_full : Bool =
+    io.harts.exists { a => a.in.buf0_full || a.in.buf1_full }
 
   // Connect interrupts
   interrupts := Vec.tabulate(1)
-    { _ => (enable & irq_en & (buf0_full | buf1_full)).toBool }
+    { _ => (enable & irq_en & any_buf_full).toBool }
 
-  def reg(r: UInt, gn: String, d: RegFieldDesc) = RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
+  def reg(r: UInt, gn: String, d: RegFieldDesc) =
+    RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
   regmap(
     0x00 -> Seq( /* config */
       RegField(1, enable,
@@ -104,16 +113,27 @@ trait TraceCtrlModule extends HasRegMap
   )
 
   // Pipeline outputs
-  io.out.enable              := RegNext(enable.toBool)
-  io.out.irq_en              := RegNext(irq_en.toBool)
-  io.out.ignore_illegal_insn := RegNext(ignore_illegal_insn.toBool)
-  io.out.clock_shift         := RegNext(clock_shift)
-  io.out.buf0_addr           := RegNext(buf0_addr)
-  io.out.buf0_mask           := RegNext(buf0_mask)
-  io.out.buf0_full_clear     := RegNext(buf0_full_clear)
-  io.out.buf1_addr           := RegNext(buf1_addr)
-  io.out.buf1_mask           := RegNext(buf1_mask)
-  io.out.buf1_full_clear     := RegNext(buf1_full_clear)
+  val enable_reg              = RegNext(enable.toBool)
+  val irq_en_reg              = RegNext(irq_en.toBool)
+  val ignore_illegal_insn_reg = RegNext(ignore_illegal_insn.toBool)
+  val clock_shift_reg         = RegNext(ignore_illegal_insn.toBool)
+  val buf0_mask_reg           = RegNext(buf0_mask)
+  val buf1_mask_reg           = RegNext(buf1_mask)
+
+  // Shared outputs
+  io.harts.map { a =>
+    a.out.enable              := enable_reg
+    a.out.irq_en              := irq_en_reg
+    a.out.ignore_illegal_insn := ignore_illegal_insn_reg
+    a.out.clock_shift         := clock_shift_reg
+    a.out.buf0_mask           := buf0_mask_reg
+    a.out.buf1_mask           := buf1_mask_reg
+  }
+
+  io.harts(0).out.buf0_addr       := RegNext(buf0_addr)
+  io.harts(0).out.buf0_full_clear := RegNext(buf0_full_clear)
+  io.harts(0).out.buf1_addr       := RegNext(buf1_addr)
+  io.harts(0).out.buf1_full_clear := RegNext(buf1_full_clear)
 }
 
 // Create a concrete TL2 version of the abstract TraceCtrl slave

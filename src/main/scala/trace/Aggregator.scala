@@ -159,7 +159,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
 {
   val DEBUG: Boolean = true
   val io = IO(new TraceAggregatorBundle)
-  val ctrl: TraceCtrlBundle = outer.ctrl_module.module.io
+  val ctrl: TraceCtrlOneBundle = outer.ctrl_module.module.io.harts(outer.hartid)
   val tracebuf0_full = Reg(init = Bool(false))
   val tracebuf1_full = Reg(init = Bool(false))
   val tracebuf_full = this.tracebuf0_full && this.tracebuf1_full
@@ -214,7 +214,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   }
 }
 
-class TraceAggregator(tile: RocketTile, hartid: Int)(implicit p: Parameters)
+class TraceAggregator(tile: RocketTile, val hartid: Int)(implicit p: Parameters)
                       extends LazyModule {
   val params = new TraceAggregatorParams
   val clientParams =
@@ -223,7 +223,7 @@ class TraceAggregator(tile: RocketTile, hartid: Int)(implicit p: Parameters)
       sourceId = IdRange(0, 1))
   val node = TLClientNode(Seq(TLClientPortParameters(Seq(clientParams))))
   val ctrl_module = LazyModule(
-    new TLTraceCtrl(TraceCtrlParams(params.ctrl_addr + hartid * 4096)))
+    new TLTraceCtrl(TraceCtrlParams(params.ctrl_addr + hartid * 4096, 1)))
 
   lazy val module = new TraceAggregatorModule(this)
 }
