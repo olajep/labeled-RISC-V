@@ -178,7 +178,6 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   outtrace.io.in.ignore_illegal_insn := ctrl.out.ignore_illegal_insn
   outtrace.io.in.trace               := io.coremon.trace
   outtrace.io.in.trace.valid         := !flush && io.coremon.trace.valid
-  outtrace.io.in.timeshift           := UInt(0)
 
   // Pack data in 64-bit chunks for TL write
   val packer = Module(new Packer)

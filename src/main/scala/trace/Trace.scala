@@ -151,10 +151,10 @@ class EcallTrace extends OutTrace
 }
 object EcallTrace
 {
-  def apply(trace: TraceIO, timeshift: UInt, uecall: Bool) = {
+  def apply(trace: TraceIO, uecall: Bool) = {
     val t = Wire(new EcallTrace)
     t.kind := Mux(uecall, UInt(OutTrace.KIND.UECALL), UInt(OutTrace.KIND.SECALL))
-    t.timestamp := trace.time >> timeshift
+    t.timestamp := trace.time
     t.regval := trace.register
     t
   }
@@ -170,10 +170,10 @@ class ReturnTrace extends OutTrace
 }
 object ReturnTrace
 {
-  def apply(trace: TraceIO, timeshift: UInt) = {
+  def apply(trace: TraceIO) = {
     val t = Wire(new ReturnTrace)
     t.kind := UInt(OutTrace.KIND.RETURN)
-    t.timestamp := trace.time >> timeshift
+    t.timestamp := trace.time
     t.regval := trace.register
     t.pc := trace.insn.iaddr
     t
@@ -191,10 +191,10 @@ class PCHITrace extends OutTrace
 }
 object PCHITrace
 {
-  def apply(trace: TraceIO, timeshift: UInt, pc_width: Int) = {
+  def apply(trace: TraceIO, pc_width: Int) = {
     val t        = Wire(new PCHITrace)
     t.kind      := UInt(OutTrace.KIND.PCHI)
-    t.timestamp := trace.time >> timeshift
+    t.timestamp := trace.time
     t.priv      := trace.insn.priv
     t.reserved  := 0.U
     // NB: vaddr is a signed integer so software needs to sign extend it
@@ -219,10 +219,10 @@ class ExceptionTrace extends OutTrace
 }
 object ExceptionTrace
 {
-  def apply(trace: TraceIO, timeshift: UInt, cause: UInt, interrupt: Bool) = {
+  def apply(trace: TraceIO, cause: UInt, interrupt: Bool) = {
     val t = Wire(new ExceptionTrace)
     t.kind := UInt(OutTrace.KIND.EXCEPTION)
-    t.timestamp := trace.time >> timeshift
+    t.timestamp := trace.time
     t.reserved := UInt(0)
     // HACK: Interrupt bit not carried over from Rocket core cause bits in
     // TracedInstruction even though the highest bit is reserved for that
@@ -253,7 +253,6 @@ class TraceLogicBundle()(implicit p: Parameters) extends CoreBundle()(p)
   val in = Input(new Bundle {
     val enable = Bool()
     val trace = new TraceIO
-    val timeshift = UInt(width = 6) // 64
     val ignore_illegal_insn = Bool()
   })
 
@@ -327,12 +326,11 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
     Mux(prev_exception,
       Mux(is_ecall(prev_cause),
         // Normal ecall
-        EcallTrace(io.in.trace, io.in.timeshift, is_UtoS).toBits,
+        EcallTrace(io.in.trace, is_UtoS).toBits,
         // Exception or interrupt
-        ExceptionTrace(io.in.trace, io.in.timeshift, prev_cause,
-                       prev_interrupt).toBits),
+        ExceptionTrace(io.in.trace, prev_cause, prev_interrupt).toBits),
       // Return from ecall / exception / interrupt
-      ReturnTrace(io.in.trace, io.in.timeshift).toBits)
+      ReturnTrace(io.in.trace).toBits)
 
 
   // PCHI traces
@@ -353,8 +351,7 @@ class TraceLogic(implicit p: Parameters) extends CoreModule()(p)
   val pchi_fifo =
     Module(new Queue(UInt(width=OutTrace.MAX_SIZE), 1, flow=true))
   pchi_fifo.io.enq.valid := inject_pchi_trace
-  pchi_fifo.io.enq.bits :=
-    PCHITrace(io.in.trace, io.in.timeshift, coreMaxAddrBits).toBits
+  pchi_fifo.io.enq.bits  := PCHITrace(io.in.trace, coreMaxAddrBits).toBits
 
 
   // We need to inject timestamp traces since normal traces are only 18+ bits
