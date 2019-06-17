@@ -8,6 +8,14 @@ import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip.tilelink._
 
+object TraceCtrlConsts
+{
+  def config_offs      = 0x000
+  def buf_mask_offs    = 0x008
+  def status_offs      = 0x100
+  def buf_addr_offs    = 0x500
+}
+
 case class TraceCtrlParams(address: BigInt, nharts: Int)
 
 class TraceCtrlOneBundle extends Bundle
@@ -45,19 +53,24 @@ trait TraceCtrlModule extends HasRegMap
   val enable = RegInit(UInt(0, width = 1))
   val irq_en = RegInit(UInt(0, width = 1))
   val ignore_illegal_insn = RegInit(UInt(0, width = 1))
-  val buf0_full = RegInit(UInt(0, width = 1))
-  val buf0_full_clear = Wire(init=Bool(false))
-  val buf1_full = RegInit(UInt(0, width = 1))
-  val buf1_full_clear = Wire(init=Bool(false))
   val (buf_mask, buf_mask_desc) =
     DescribedReg(UInt(addrWidth.W), "buf_mask", "Size of trace buffer minus 1.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
-  val buf0_addr = Reg(UInt(64.W))
-  val buf1_addr = Reg(UInt(64.W))
+
+  val buf0_addr = Reg(Vec(params.nharts, UInt(64.W)))
+  val buf1_addr = Reg(Vec(params.nharts, UInt(64.W)))
+  val buf0_full = Reg(Vec(params.nharts, UInt(0, width = 1)))
+  val buf1_full = Reg(Vec(params.nharts, UInt(0, width = 1)))
+  val buf0_full_clear = Wire(Vec(params.nharts, Bool(false)))
+  val buf1_full_clear = Wire(Vec(params.nharts, Bool(false)))
 
   // Wire up inputs
-  buf0_full := io.harts(0).in.buf0_full.asUInt
-  buf1_full := io.harts(0).in.buf1_full.asUInt
+  (buf0_full zip io.harts).foreach {
+    case (b, a) => { b := a.in.buf0_full.asUInt }
+  }
+  (buf1_full zip io.harts).foreach {
+    case (b, a) => { b := a.in.buf1_full.asUInt }
+  }
 
   // Connect interrupts
   val any_buf_full : Bool =
@@ -68,11 +81,8 @@ trait TraceCtrlModule extends HasRegMap
   def reg(r: UInt, gn: String, d: RegFieldDesc) =
     RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
 
-  def status_addr_base = 0x100
-  def buf_addr_base    = 0x500
-
   val config_reg_fields = Seq(
-    0x00 -> Seq(
+    TraceCtrlConsts.config_offs -> Seq(
       RegField(1, enable,
         RegFieldDesc("enable",
                      "Enable: Set to one to enable tracing.",
@@ -85,26 +95,32 @@ trait TraceCtrlModule extends HasRegMap
         RegFieldDesc("ignore_illegal_insn",
                      "Don't trace illegal instructions.",
                      reset = Some(0)))),
-    0x08 -> reg(buf_mask, "buf_mask", buf_mask_desc))
+    TraceCtrlConsts.buf_mask_offs -> reg(buf_mask, "buf_mask", buf_mask_desc))
+
+  require(params.nharts <= 32,
+          "FIXME: status bits will spill over into more than one register")
+  val buf_full_fields = Seq.tabulate(params.nharts) { h =>
+    Seq(RegField(1,
+      RegReadFn { _ => (Bool(true), buf0_full(h)) },
+      RegWriteFn { (valid, clear) =>
+        buf0_full_clear(h) := (valid & clear)
+        Bool(true)
+      },
+      RegFieldDesc(s"buf0_full_hart${h}", s"Trace buffer0 full hart${h}.",
+                   reset = Some(0), volatile=true)),
+    RegField(1,
+      RegReadFn { _ => (Bool(true), buf1_full(h)) },
+      RegWriteFn { (valid, clear) =>
+        buf1_full_clear(h) := (valid & clear)
+        Bool(true)
+      },
+      RegFieldDesc(s"buf1_full_hart${h}", s"Trace buffer1 full hart${h}.",
+                   reset = Some(0), volatile=true)))
+  }
 
   val status_reg_fields = Seq(
-    status_addr_base -> Seq(
-      RegField(1,
-        RegReadFn { _ => (Bool(true), buf0_full) },
-        RegWriteFn { (valid, clear) =>
-          buf0_full_clear := (valid & clear)
-          Bool(true)
-        },
-        RegFieldDesc("buf0_full", "Trace buffer0 full.",
-                     reset = Some(0), volatile=true)),
-      RegField(1,
-        RegReadFn { _ => (Bool(true), buf1_full) },
-        RegWriteFn { (valid, clear) =>
-          buf1_full_clear := (valid & clear)
-          Bool(true)
-        },
-        RegFieldDesc("buf1_full", "Trace buffer1 full.",
-                     reset = Some(0), volatile=true))))
+    TraceCtrlConsts.status_offs -> buf_full_fields.flatten
+  )
 
   def buf_addr_reg_desc(h: Int, i: Int) =
     RegFieldDesc(
@@ -114,11 +130,13 @@ trait TraceCtrlModule extends HasRegMap
       groupDesc = Some("Trace buffer address."),
       reset     = Some(BigInt(0)))
 
+  def buf_addr_reg_offs(h: Int, i: Int) =
+    TraceCtrlConsts.buf_addr_offs + h * 16 + i * 8
   val buf_addr_reg_fields = Seq.tabulate(params.nharts) { h =>
-    buf_addr_base + h * 16 + 0 -> reg(buf0_addr, s"buf0_addr_hart${i}",
-                                      buf_addr_reg_desc(h, 0))
-    buf_addr_base + h * 16 + 8 -> reg(buf1_addr, s"buf1_addr_hart${i}",
-                                      buf_addr_reg_desc(h, 1))
+    buf_addr_reg_offs(h, 0) -> reg(buf0_addr(h), s"buf0_addr_hart${h}",
+                                   buf_addr_reg_desc(h, 0))
+    buf_addr_reg_offs(h, 1) -> reg(buf1_addr(h), s"buf1_addr_hart${h}",
+                                   buf_addr_reg_desc(h, 1))
   }
 
   regmap((config_reg_fields ++ status_reg_fields ++ buf_addr_reg_fields):_*)
@@ -137,10 +155,19 @@ trait TraceCtrlModule extends HasRegMap
     a.out.buf_mask            := buf_mask_reg
   }
 
-  io.harts(0).out.buf0_addr       := RegNext(buf0_addr)
-  io.harts(0).out.buf0_full_clear := RegNext(buf0_full_clear)
-  io.harts(0).out.buf1_addr       := RegNext(buf1_addr)
-  io.harts(0).out.buf1_full_clear := RegNext(buf1_full_clear)
+  // Per hart
+  (io.harts, buf0_addr, buf1_addr).zipped.foreach {
+    case (a, b0a, b1a) => {
+      a.out.buf0_addr := RegNext(b0a)
+      a.out.buf1_addr := RegNext(b1a)
+    }
+  }
+  (io.harts, buf0_full_clear, buf1_full_clear).zipped.foreach {
+    case (a, b0fc, b1fc) => {
+      a.out.buf0_full_clear := RegNext(b0fc)
+      a.out.buf1_full_clear := RegNext(b1fc)
+    }
+  }
 }
 
 // Create a concrete TL2 version of the abstract TraceCtrl slave
