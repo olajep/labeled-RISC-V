@@ -86,9 +86,7 @@ trait HasTraceAggregatorTLLogic
     val tracebuf_addr = Mux(!tracebuf_sel,
                             this.ctrl.out.buf0_addr,
                             this.ctrl.out.buf1_addr)
-    val trace_size_mask = Mux(!tracebuf_sel,
-                              this.ctrl.out.buf0_mask,
-                              this.ctrl.out.buf1_mask)
+    val trace_size_mask = this.ctrl.out.buf_mask
     val tracebuf_switch = RegInit(Bool(false))
 
     this.tracebuf0_full :=  this.tracebuf0_full &&
