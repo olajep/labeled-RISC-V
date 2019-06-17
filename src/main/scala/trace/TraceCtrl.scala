@@ -20,7 +20,6 @@ class TraceCtrlOneBundle extends Bundle
     val enable = Bool()
     val irq_en = Bool()
     val ignore_illegal_insn = Bool()
-    val clock_shift = UInt(32.W)
     val buf0_addr = UInt(64.W)
     val buf0_mask = UInt(64.W)
     val buf0_full_clear = Bool()
@@ -51,9 +50,6 @@ trait TraceCtrlModule extends HasRegMap
   val buf0_full_clear = Wire(init=Bool(false))
   val buf1_full = RegInit(UInt(0, width = 1))
   val buf1_full_clear = Wire(init=Bool(false))
-  val (clock_shift, clock_shift_desc) =
-    DescribedReg(UInt(32.W), "clock_shift", "Log 2 timestamp divider.",
-      reset=Some(0.U(32.W)), volatile=true)
   val (buf0_addr, buf0_addr_desc) =
     DescribedReg(UInt(addrWidth.W), "buf0_addr", "Base address of trace buffer 0. Must have buf0_mask alignment.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
@@ -105,7 +101,6 @@ trait TraceCtrlModule extends HasRegMap
         },
         RegFieldDesc("buf1_full", "Trace buffer1 full.",
                      reset = Some(0), volatile=true))),
-    0x08 -> reg(clock_shift, "Log2 Clock Divider", clock_shift_desc),
     0x10 -> reg(buf0_addr, "buf0_addr", buf0_addr_desc),
     0x18 -> reg(buf0_mask, "buf0_mask", buf0_mask_desc),
     0x20 -> reg(buf1_addr, "buf1_addr", buf1_addr_desc),
@@ -116,7 +111,6 @@ trait TraceCtrlModule extends HasRegMap
   val enable_reg              = RegNext(enable.toBool)
   val irq_en_reg              = RegNext(irq_en.toBool)
   val ignore_illegal_insn_reg = RegNext(ignore_illegal_insn.toBool)
-  val clock_shift_reg         = RegNext(ignore_illegal_insn.toBool)
   val buf0_mask_reg           = RegNext(buf0_mask)
   val buf1_mask_reg           = RegNext(buf1_mask)
 
@@ -125,7 +119,6 @@ trait TraceCtrlModule extends HasRegMap
     a.out.enable              := enable_reg
     a.out.irq_en              := irq_en_reg
     a.out.ignore_illegal_insn := ignore_illegal_insn_reg
-    a.out.clock_shift         := clock_shift_reg
     a.out.buf0_mask           := buf0_mask_reg
     a.out.buf1_mask           := buf1_mask_reg
   }
