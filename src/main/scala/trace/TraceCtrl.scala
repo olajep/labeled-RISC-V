@@ -99,8 +99,8 @@ trait TraceCtrlModule extends HasRegMap
 
   require(params.nharts <= 32,
           "FIXME: status bits will spill over into more than one register")
-  val buf_full_fields = Seq.tabulate(params.nharts) { h =>
-    Seq(RegField(1,
+  val buf_full_fields = Seq.tabulate(params.nharts) { h => Seq(
+    RegField(1,
       RegReadFn { _ => (Bool(true), buf0_full(h)) },
       RegWriteFn { (valid, clear) =>
         buf0_full_clear(h) := (valid & clear)
@@ -132,14 +132,15 @@ trait TraceCtrlModule extends HasRegMap
 
   def buf_addr_reg_offs(h: Int, i: Int) =
     TraceCtrlConsts.buf_addr_offs + h * 16 + i * 8
-  val buf_addr_reg_fields = Seq.tabulate(params.nharts) { h =>
-    buf_addr_reg_offs(h, 0) -> reg(buf0_addr(h), s"buf0_addr_hart${h}",
-                                   buf_addr_reg_desc(h, 0))
-    buf_addr_reg_offs(h, 1) -> reg(buf1_addr(h), s"buf1_addr_hart${h}",
-                                   buf_addr_reg_desc(h, 1))
+  val buf_addr_reg_fields = Seq.tabulate(params.nharts) { h => Seq(
+      buf_addr_reg_offs(h, 0) -> reg(buf0_addr(h), s"buf0_addr_hart${h}",
+                                     buf_addr_reg_desc(h, 0)),
+      buf_addr_reg_offs(h, 1) -> reg(buf1_addr(h), s"buf1_addr_hart${h}",
+                                     buf_addr_reg_desc(h, 1))
+    )
   }
 
-  regmap((config_reg_fields ++ status_reg_fields ++ buf_addr_reg_fields):_*)
+  regmap((config_reg_fields ++ status_reg_fields ++ buf_addr_reg_fields.flatten):_*)
 
   // Pipeline outputs
   val enable_reg              = RegNext(enable.toBool)
@@ -148,7 +149,7 @@ trait TraceCtrlModule extends HasRegMap
   val buf_mask_reg            = RegNext(buf_mask)
 
   // Shared outputs
-  io.harts.map { a =>
+  io.harts.foreach { a =>
     a.out.enable              := enable_reg
     a.out.irq_en              := irq_en_reg
     a.out.ignore_illegal_insn := ignore_illegal_insn_reg
