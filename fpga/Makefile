@@ -21,7 +21,8 @@ HWDEF_FILE = $(abspath $(PRJ_ROOT)/$(PRJ_FULL).sdk/system_top.hdf)
 
 pardcore_rtl_deps = \
 	$(shell find ../src/main/scala -name *.scala) \
-	pardcore/dts/pardcore-$(BOARD)-top.dts
+	pardcore/dts/pardcore-$(BOARD)-top.dts \
+	pardcore/bd/pardcore.tcl.in
 $(PARDCORE_RTL): $(pardcore_rtl_deps)
 	make -C pardcore BOARD=$(BOARD)
 
