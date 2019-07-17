@@ -7,7 +7,7 @@
 # verify proper functionality.
 #
 
-default: verilog devicetree
+default: verilog devicetree bd
 
 fpga_dir = $(abspath ..)
 base_dir = $(fpga_dir)/..
@@ -17,7 +17,9 @@ dts_dir  = dts
 
 MODEL ?= TestHarness
 BOARD ?= zcu102
-CONFIG = LvNAFPGAConfig$(BOARD)
+NAME = TraceFPGA
+CONFIG = $(NAME)Config$(BOARD)
+TOP = $(NAME)Top
 
 #--------------------------------------------------------------------
 # Rocket-chip verilog source generation
@@ -31,6 +33,8 @@ other_rtl = $(base_dir)/src/main/resources/vsrc/AsyncResetReg.v \
             $(base_dir)/src/main/resources/vsrc/plusarg_reader.v
 dts       = pardcore-$(BOARD)-top.dts
 dtb       = $(dts:.dts=.dtb)
+bd        = bd/pardcore.tcl
+
 
 $(gen_rtl):
 	$(MAKE) verilog -C $(base_dir)/vsim CONFIG=$(CONFIG) MODEL=$(MODEL) generated_dir=$(generated_dir)
@@ -50,7 +54,12 @@ $(build_dir)/%.dtb: $(dts_dir)/%.dts
 
 devicetree: $(build_dir)/$(dtb)
 
-.PHONY: $(gen_rtl) verilog devicetree
+bd: $(bd)
+$(bd): $(bd).in
+	sed 's/@TOPNAME@/$(TOP)/g' $< > $@
+
+
+.PHONY: $(gen_rtl) verilog devicetree bd
 
 #--------------------------------------------------------------------
 # Cleaning
@@ -60,5 +69,6 @@ clean:
 	-rm -rf $(generated_dir)/freechips.rocketchip.system.$(CONFIG)*
 	-rm -rf $(rocketchip_rtl)
 	-rm -rf $(build_dir)/$(dtb)
+	-rm -rf $(bd)
 
 .PHONY: default clean
