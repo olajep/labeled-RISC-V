@@ -39,7 +39,8 @@ class RocketTile(
     with HasExternalInterrupts
     with HasLazyRoCC  // implies CanHaveSharedFPU with CanHavePTW with HasHellaCache
     with HasHellaCache
-    with HasICacheFrontend {
+    with HasICacheFrontend
+    with CanHaveTraceAggregator {
 
   val intOutwardNode = IntIdentityNode()
   val slaveNode = TLIdentityNode()
@@ -107,15 +108,14 @@ class RocketTile(
     if (!rocketParams.boundaryBuffers) super.makeSlaveBoundaryBuffers
     else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
   }
-
-  val aggregator = LazyModule(new TraceAggregator(this, hartId)(p))
 }
 
 class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     with HasFpuOpt
     with HasLazyRoCCModule
     with HasControlPlaneParameters
-    with HasICacheFrontendModule {
+    with HasICacheFrontendModule
+    with CanHaveTraceAggregatorModule {
   Annotated.params(this, outer.rocketParams)
 
   val core = Module(new Rocket()(outer.p))
@@ -191,7 +191,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   dcacheArb.io.requestor <> dcachePorts
   ptw.io.requestor <> ptwPorts
 
-  outer.aggregator.module.io.coremon <> core.io.monitor
+  connectAggregatorToCoremon()
 }
 
 trait HasFpuOpt { this: RocketTileModuleImp =>

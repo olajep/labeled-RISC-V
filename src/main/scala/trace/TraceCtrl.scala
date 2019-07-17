@@ -7,6 +7,9 @@ import chisel3.{Input, Output}
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.subsystem._
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tile._
 
 object TraceCtrlConsts
 {
@@ -176,3 +179,22 @@ class TLTraceCtrl(params: TraceCtrlParams)(implicit p: Parameters)
   extends TLRegisterRouter(params.address, "tracectrl", Seq("clemson,trace-ctrl"), 1 /* interrupt */, beatBytes = 8)(
   new TLRegBundle(params, _)    with TraceCtrlBundle)(
   new TLRegModule(params, _, _) with TraceCtrlModule)
+
+trait HasTraceCtrl extends HasRocketTiles {
+  this: BaseSubsystem =>
+
+  val trace_ctrl_module = LazyModule(
+    new TLTraceCtrl(TraceCtrlParams(0x50000000, p(NTiles))))
+
+  // Connect trace control device to system bus
+  sbus.control_bus.toVariableWidthSlave(Some("trace_ctrl")) { trace_ctrl_module.node }
+  ibus.fromSync := trace_ctrl_module.intnode
+}
+
+trait HasTraceCtrlModuleImpl extends HasRocketTilesModuleImp {
+  val outer: HasTraceCtrl
+
+  (outer.rocketTiles zip outer.trace_ctrl_module.module.io.harts).foreach {
+    case (tile, hartio) => tile.module.ctrl_io := hartio
+  }
+}

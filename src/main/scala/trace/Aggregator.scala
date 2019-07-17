@@ -8,9 +8,12 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
+import freechips.rocketchip.tile._
+import freechips.rocketchip.subsystem._
 
 class TraceAggregatorBundle(implicit p: Parameters) extends Bundle {
   val coremon = new MonitorIO().asInput
+  val ctrl = new TraceCtrlOneBundle().flip
 }
 
 class TraceAggregatorParams(
@@ -84,15 +87,15 @@ trait HasTraceAggregatorTLLogic
 
     val tracebuf_sel = RegInit(Bool(false))
     val tracebuf_addr = Mux(!tracebuf_sel,
-                            this.ctrl.out.buf0_addr,
-                            this.ctrl.out.buf1_addr)
-    val trace_size_mask = this.ctrl.out.buf_mask
+                            this.io.ctrl.out.buf0_addr,
+                            this.io.ctrl.out.buf1_addr)
+    val trace_size_mask = this.io.ctrl.out.buf_mask
     val tracebuf_switch = RegInit(Bool(false))
 
     this.tracebuf0_full :=  this.tracebuf0_full &&
-                           !this.ctrl.out.buf0_full_clear
+                           !this.io.ctrl.out.buf0_full_clear
     this.tracebuf1_full :=  this.tracebuf1_full &&
-                           !this.ctrl.out.buf1_full_clear
+                           !this.io.ctrl.out.buf1_full_clear
     when (!this.enable) {
       this.tracebuf0_full := false.B
       this.tracebuf1_full := false.B
@@ -111,8 +114,8 @@ trait HasTraceAggregatorTLLogic
       trace_offset := new_traceoffset
       tracebuf_switch := new_traceoffset === 0.U
     }
-    this.ctrl.in.buf0_full := RegNext(this.tracebuf0_full)
-    this.ctrl.in.buf1_full := RegNext(this.tracebuf1_full)
+    this.io.ctrl.in.buf0_full := RegNext(this.tracebuf0_full)
+    this.io.ctrl.in.buf1_full := RegNext(this.tracebuf1_full)
 
     // TODO: Require that tracebuf_addr must be aligned to
     // (trace_size_mask+1) so we can do | instead of +
@@ -157,14 +160,13 @@ class TraceAggregatorModule(val outer: TraceAggregator)
 {
   val DEBUG: Boolean = true
   val io = IO(new TraceAggregatorBundle)
-  val ctrl: TraceCtrlOneBundle = outer.ctrl_module.module.io.harts(outer.hartid)
   val tracebuf0_full = Reg(init = Bool(false))
   val tracebuf1_full = Reg(init = Bool(false))
   val tracebuf_full = this.tracebuf0_full && this.tracebuf1_full
 
   val enable = Wire(Bool())
   val flush = Wire(Bool())
-  enable := ctrl.out.enable
+  enable := io.ctrl.out.enable
   flush := !enable || tracebuf_full
 
   // Pipeline:
@@ -173,7 +175,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   // Convert core trace to output trace format
   val outtrace = Module(new TraceLogic)
   outtrace.io.in.enable              := !flush
-  outtrace.io.in.ignore_illegal_insn := ctrl.out.ignore_illegal_insn
+  outtrace.io.in.ignore_illegal_insn := io.ctrl.out.ignore_illegal_insn
   outtrace.io.in.trace               := io.coremon.trace
   outtrace.io.in.trace.valid         := !flush && io.coremon.trace.valid
 
@@ -211,7 +213,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
   }
 }
 
-class TraceAggregator(tile: RocketTile, val hartid: Int)(implicit p: Parameters)
+class TraceAggregator(val tile: RocketTile, val hartid: Int)(implicit p: Parameters)
                       extends LazyModule {
   val params = new TraceAggregatorParams
   val clientParams =
@@ -219,8 +221,27 @@ class TraceAggregator(tile: RocketTile, val hartid: Int)(implicit p: Parameters)
       name = s"trace_aggregator_${hartid}",
       sourceId = IdRange(0, 1))
   val node = TLClientNode(Seq(TLClientPortParameters(Seq(clientParams))))
-  val ctrl_module = LazyModule(
-    new TLTraceCtrl(TraceCtrlParams(params.ctrl_addr + hartid * 4096, 1)))
-
   lazy val module = new TraceAggregatorModule(this)
+}
+
+trait CanHaveTraceAggregator
+{
+  this: RocketTile =>
+  val aggregator = LazyModule(new TraceAggregator(this, hartId)(p))
+
+  def connectAggregatorToSBus(sbus: SystemBus) = {
+    // Connect trace aggregator to system bus
+    // TODO: Parameterize
+    sbus.fromMaster(Some("trace_aggregator"), BufferParams.flow) { aggregator.node }
+  }
+}
+
+trait CanHaveTraceAggregatorModule
+{
+  this: RocketTileModuleImp =>
+  val ctrl_io = IO(new TraceCtrlOneBundle().flip)
+  def connectAggregatorToCoremon() = {
+    outer.aggregator.module.io.coremon <> core.io.monitor
+    outer.aggregator.module.io.ctrl <> ctrl_io
+  }
 }
