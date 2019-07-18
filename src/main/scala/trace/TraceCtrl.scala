@@ -10,6 +10,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile._
+import freechips.rocketchip.system._
 
 object TraceCtrlConsts
 {
@@ -180,21 +181,29 @@ class TLTraceCtrl(params: TraceCtrlParams)(implicit p: Parameters)
   new TLRegBundle(params, _)    with TraceCtrlBundle)(
   new TLRegModule(params, _, _) with TraceCtrlModule)
 
-trait HasTraceCtrl extends HasRocketTiles {
+trait CanHaveTraceCtrl extends HasRocketTiles {
   this: BaseSubsystem =>
 
-  val trace_ctrl_module = LazyModule(
-    new TLTraceCtrl(TraceCtrlParams(0x50000000, p(NTiles))))
+  val trace_ctrl_module =
+    if (p(TraceSubsystemEnabled)) {
+      Some(LazyModule(new TLTraceCtrl(TraceCtrlParams(0x50000000, p(NTiles)))))
+    } else {
+      None
+    }
 
-  // Connect trace control device to system bus
-  sbus.control_bus.toVariableWidthSlave(Some("trace_ctrl")) { trace_ctrl_module.node }
-  ibus.fromSync := trace_ctrl_module.intnode
+  if (p(TraceSubsystemEnabled)) {
+    // Connect trace control device to system bus
+    sbus.control_bus.toVariableWidthSlave(Some("trace_ctrl")) { trace_ctrl_module.get.node }
+    ibus.fromSync := trace_ctrl_module.get.intnode
+  }
 }
 
-trait HasTraceCtrlModuleImpl extends HasRocketTilesModuleImp {
-  val outer: HasTraceCtrl
+trait CanHaveTraceCtrlModuleImpl extends HasRocketTilesModuleImp {
+  val outer: CanHaveTraceCtrl
 
-  (outer.rocketTiles zip outer.trace_ctrl_module.module.io.harts).foreach {
-    case (tile, hartio) => tile.module.ctrl_io := hartio
+  if (p(TraceSubsystemEnabled)) {
+    (outer.rocketTiles zip outer.trace_ctrl_module.get.module.io.harts).foreach {
+      case (tile, hartio) => tile.module.ctrl_io := hartio
+    }
   }
 }

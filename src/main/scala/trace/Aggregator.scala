@@ -10,6 +10,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
 import freechips.rocketchip.tile._
 import freechips.rocketchip.subsystem._
+import freechips.rocketchip.system._
 
 class TraceAggregatorBundle(implicit p: Parameters) extends Bundle {
   val coremon = new MonitorIO().asInput
@@ -227,12 +228,18 @@ class TraceAggregator(val tile: RocketTile, val hartid: Int)(implicit p: Paramet
 trait CanHaveTraceAggregator
 {
   this: RocketTile =>
-  val aggregator = LazyModule(new TraceAggregator(this, hartId)(p))
+  val aggregator =
+    if (p(TraceSubsystemEnabled)) {
+      Some(LazyModule(new TraceAggregator(this, hartId)(p)))
+    } else {
+      None
+    }
 
   def connectAggregatorToSBus(sbus: SystemBus) = {
-    // Connect trace aggregator to system bus
-    // TODO: Parameterize
-    sbus.fromMaster(Some("trace_aggregator"), BufferParams.flow) { aggregator.node }
+    if (p(TraceSubsystemEnabled)) {
+      // Connect trace aggregator to system bus
+      sbus.fromMaster(Some("trace_aggregator"), BufferParams.flow) { aggregator.get.node }
+    }
   }
 }
 
@@ -241,7 +248,9 @@ trait CanHaveTraceAggregatorModule
   this: RocketTileModuleImp =>
   val ctrl_io = IO(new TraceCtrlOneBundle().flip)
   def connectAggregatorToCoremon() = {
-    outer.aggregator.module.io.coremon <> core.io.monitor
-    outer.aggregator.module.io.ctrl <> ctrl_io
+    if (p(TraceSubsystemEnabled)) {
+      outer.aggregator.get.module.io.coremon <> core.io.monitor
+      outer.aggregator.get.module.io.ctrl <> ctrl_io
+    }
   }
 }
