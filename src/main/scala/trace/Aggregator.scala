@@ -118,6 +118,14 @@ trait HasTraceAggregatorTLLogic
     this.io.ctrl.in.buf0_full := RegNext(this.tracebuf0_full)
     this.io.ctrl.in.buf1_full := RegNext(this.tracebuf1_full)
 
+    when (this.enable) {
+      when (!tracebuf_sel) {
+        this.io.ctrl.in.buf0_ptr := RegNext(trace_offset)
+      } .otherwise {
+        this.io.ctrl.in.buf1_ptr := RegNext(trace_offset)
+      }
+    }
+
     // TODO: Require that tracebuf_addr must be aligned to
     // (trace_size_mask+1) so we can do | instead of +
     addr := tracebuf_addr + trace_offset
