@@ -38,8 +38,10 @@ class TraceCtrlOneBundle extends Bundle
     val buf_mask = UInt(64.W)
     val buf0_addr = UInt(64.W)
     val buf0_full_clear = Bool()
+    val buf0_ptr_clear = Bool()
     val buf1_addr = UInt(64.W)
     val buf1_full_clear = Bool()
+    val buf1_ptr_clear = Bool()
   }
 }
 
@@ -72,6 +74,8 @@ trait TraceCtrlModule extends HasRegMap
   val buf1_full_clear = Wire(Vec(params.nharts, Bool(false)))
   val buf0_ptr  = Reg(Vec(params.nharts, UInt(32.W)))
   val buf1_ptr  = Reg(Vec(params.nharts, UInt(32.W)))
+  val buf0_ptr_clear = Wire(Vec(params.nharts, Bool(false)))
+  val buf1_ptr_clear = Wire(Vec(params.nharts, Bool(false)))
 
   // Wire up inputs
   (buf0_full zip io.harts).foreach {
@@ -87,8 +91,6 @@ trait TraceCtrlModule extends HasRegMap
     case (b, a) => { b := a.in.buf1_ptr }
   }
 
-
-
   // Connect interrupts
   val any_buf_full : Bool =
     io.harts.exists { a => a.in.buf0_full || a.in.buf1_full }
@@ -98,8 +100,19 @@ trait TraceCtrlModule extends HasRegMap
   def reg(r: UInt, gn: String, d: RegFieldDesc) =
     RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
 
-  def ro_reg(r: UInt, d: RegFieldDesc) =
-    RegField.r((r.getWidth + 7)/8, RegReadFn { _ => (Bool(true), r) }, d)
+  def ro_reg(r: UInt, gn: String, d: RegFieldDesc) =
+    RegFieldGroup(gn, None, Seq(RegField.r(r.getWidth, RegReadFn { _ => (Bool(true), r) }, d)))
+
+  def notify_reg(r: UInt, notify: Bool, gn: String, d: RegFieldDesc) =
+    RegFieldGroup(gn, None, Seq(
+      RegField(r.getWidth,
+               RegReadFn { _ => (Bool(true), r) },
+               RegWriteFn { (valid, data) =>
+                 when (valid) { r := data }
+                 notify := valid
+                 Bool(true)
+               },
+               d)))
 
   val config_reg_fields = Seq(
     TraceCtrlConsts.config_offs -> Seq(
@@ -153,10 +166,12 @@ trait TraceCtrlModule extends HasRegMap
   def buf_addr_reg_offs(h: Int, i: Int) =
     TraceCtrlConsts.buf_addr_offs + h * 16 + i * 8
   val buf_addr_reg_fields = Seq.tabulate(params.nharts) { h => Seq(
-      buf_addr_reg_offs(h, 0) -> reg(buf0_addr(h), s"buf0_addr_hart${h}",
-                                     buf_addr_reg_desc(h, 0)),
-      buf_addr_reg_offs(h, 1) -> reg(buf1_addr(h), s"buf1_addr_hart${h}",
-                                     buf_addr_reg_desc(h, 1))
+      buf_addr_reg_offs(h, 0) ->
+        notify_reg(buf0_addr(h), buf0_ptr_clear(h), s"buf0_addr_hart${h}",
+                   buf_addr_reg_desc(h, 0)),
+      buf_addr_reg_offs(h, 1) ->
+        notify_reg(buf1_addr(h), buf1_ptr_clear(h), s"buf1_addr_hart${h}",
+                   buf_addr_reg_desc(h, 1))
     )
   }
 
@@ -170,8 +185,8 @@ trait TraceCtrlModule extends HasRegMap
   def buf_ptr_reg_offs(h: Int, i: Int) =
     TraceCtrlConsts.buf_ptr_offs + h * 8 + i * 4
   val buf_ptr_reg_fields = Seq.tabulate(params.nharts) { h => Seq(
-      buf_ptr_reg_offs(h, 0) -> Seq(ro_reg(buf0_ptr(h), buf_ptr_reg_desc(h, 0))),
-      buf_ptr_reg_offs(h, 1) -> Seq(ro_reg(buf1_ptr(h), buf_ptr_reg_desc(h, 1)))
+      buf_ptr_reg_offs(h, 0) -> ro_reg(buf0_ptr(h), "buf0_ptr", buf_ptr_reg_desc(h, 0)),
+      buf_ptr_reg_offs(h, 1) -> ro_reg(buf1_ptr(h), "buf1_ptr", buf_ptr_reg_desc(h, 1))
     )
   }
 
@@ -203,6 +218,12 @@ trait TraceCtrlModule extends HasRegMap
     case (a, b0fc, b1fc) => {
       a.out.buf0_full_clear := RegNext(b0fc)
       a.out.buf1_full_clear := RegNext(b1fc)
+    }
+  }
+  (io.harts, buf0_ptr_clear, buf1_ptr_clear).zipped.foreach {
+    case (a, clear0, clear1) => {
+      a.out.buf0_ptr_clear := RegNext(clear0)
+      a.out.buf1_ptr_clear := RegNext(clear1)
     }
   }
 }

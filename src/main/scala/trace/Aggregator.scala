@@ -83,8 +83,11 @@ trait HasTraceAggregatorTLLogic
     data_valid := this.fifo.io.deq.valid
     this.fifo.io.deq.ready := data_ready || this.flush
 
-    // "Ring buffer 0"
+    // Buffer pointers
     val trace_offset = RegInit(UInt(0, width=32))
+    val next_bufptr = trace_offset + (1 << size).U
+    val bufptr0 = RegInit(UInt(0, width=32))
+    val bufptr1 = RegInit(UInt(0, width=32))
 
     val tracebuf_sel = RegInit(Bool(false))
     val tracebuf_addr = Mux(!tracebuf_sel,
@@ -110,21 +113,26 @@ trait HasTraceAggregatorTLLogic
       trace_offset := 0.U
       tracebuf_switch := false.B
     } .elsewhen (out.a.fire()) {
-      val incr = (1 << size).U
-      val new_traceoffset = (trace_offset + incr) & trace_size_mask
-      trace_offset := new_traceoffset
-      tracebuf_switch := new_traceoffset === 0.U
+      val next_traceoffset = next_bufptr & trace_size_mask
+      trace_offset := next_traceoffset
+      tracebuf_switch := next_traceoffset === 0.U
     }
+
     this.io.ctrl.in.buf0_full := RegNext(this.tracebuf0_full)
     this.io.ctrl.in.buf1_full := RegNext(this.tracebuf1_full)
 
-    when (this.enable) {
-      when (!tracebuf_sel) {
-        this.io.ctrl.in.buf0_ptr := RegNext(trace_offset)
-      } .otherwise {
-        this.io.ctrl.in.buf1_ptr := RegNext(trace_offset)
-      }
+    when (io.ctrl.out.buf0_ptr_clear) {
+      bufptr0 := 0.U
+    } .elsewhen (out.a.fire() && !tracebuf_sel) {
+      bufptr0 := next_bufptr
     }
+    when (io.ctrl.out.buf1_ptr_clear) {
+      bufptr1 := 0.U
+    } .elsewhen (out.a.fire() && tracebuf_sel) {
+      bufptr1 := next_bufptr
+    }
+    this.io.ctrl.in.buf0_ptr := bufptr0
+    this.io.ctrl.in.buf1_ptr := bufptr1
 
     // TODO: Require that tracebuf_addr must be aligned to
     // (trace_size_mask+1) so we can do | instead of +
