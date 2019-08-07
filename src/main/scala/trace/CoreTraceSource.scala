@@ -20,7 +20,7 @@ class RegFileMonitorCfgIO extends Bundle {
 }
 
 object RegFileMonitor {
-  val DEBUG = true
+  val DEBUG = false
   def connect(monitor: CoreMonitorIO) = {
     def valid(regno: UInt) = {
       monitor.regfile.valid && monitor.regfile.dst === regno
