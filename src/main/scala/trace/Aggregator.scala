@@ -90,10 +90,25 @@ trait HasTraceAggregatorTLLogic
     val bufptr1 = RegInit(UInt(0, width=32))
 
     val tracebuf_sel = RegInit(Bool(false))
-    val tracebuf_addr = Mux(!tracebuf_sel,
-                            this.io.ctrl.out.buf0_addr,
-                            this.io.ctrl.out.buf1_addr)
-    val trace_size_mask = this.io.ctrl.out.buf_mask
+
+    val tracebuf_addr =
+      if (this.TEST) {
+        Mux(!tracebuf_sel,
+            RegInit((0x100600000L + outer.hartid * 65536 * 2 + 0).U),
+            RegInit((0x100600000L + outer.hartid * 65536 * 2 + 65536).U))
+      } else {
+        Mux(!tracebuf_sel,
+            this.io.ctrl.out.buf0_addr,
+            this.io.ctrl.out.buf1_addr)
+      }
+
+
+    val trace_size_mask =
+      if (this.TEST) {
+        0xFFFF.U
+      } else {
+        this.io.ctrl.out.buf_mask
+      }
     val tracebuf_switch = RegInit(Bool(false))
 
     this.tracebuf0_full :=  this.tracebuf0_full &&
@@ -176,6 +191,7 @@ class TraceAggregatorModule(val outer: TraceAggregator)
                             with HasTraceAggregatorTLLogic
 {
   val DEBUG: Boolean = true
+  val TEST: Boolean = false
   val io = IO(new TraceAggregatorBundle)
   val tracebuf0_full = Reg(init = Bool(false))
   val tracebuf1_full = Reg(init = Bool(false))
@@ -183,7 +199,11 @@ class TraceAggregatorModule(val outer: TraceAggregator)
 
   val enable = Wire(Bool())
   val flush = Wire(Bool())
-  enable := io.ctrl.out.enable
+  if (TEST) {
+    enable := true.B
+  } else {
+    enable := io.ctrl.out.enable
+  }
   flush := !enable || tracebuf_full
 
   // Pipeline:
