@@ -10,8 +10,8 @@
 		serial1 = &uart1;
 		serial2 = &uart2;
 		serial3 = &uart3;
+		ethernet0 = &ethernet0;
 	};
-
 	misc_clk_0: misc_clk_0 {
 		#clock-cells = <0>;
 		clock-frequency = <100000000>;
@@ -82,6 +82,26 @@
 			reg = <0x0 0x60006000 0x0 0x2000>;
 			reg-offset = <0x1000>;
 			reg-shift = <2>;
+		};
+		ethernet0: ethernet@60020000 {
+			compatible = "xlnx,xps-ethernetlite-1.00.a";
+			device_type = "network";
+			interrupt-parent = <&{/soc/interrupt-controller@c000000}>;
+			interrupts = <7>;
+			reg = <0x0 0x60020000 0x0 0x10000>;
+			xlnx,duplex = <0x1>;
+			xlnx,include-global-buffers = <0x1>;
+			xlnx,include-internal-loopback = <0x0>;
+			xlnx,include-mdio = <0x0>;
+			xlnx,rx-ping-pong = <0x1>;
+			xlnx,s-axi-id-width = <0x1>;
+			xlnx,select-xpm = <0x1>;
+			xlnx,tx-ping-pong = <0x1>;
+			xlnx,use-internal = <0x0>;
+			mdio0: mdio0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
 		};
 	};
 };

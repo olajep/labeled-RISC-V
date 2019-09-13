@@ -22,6 +22,7 @@ module system_top (
   wire pardcore_uncorerstn;
   wire pardcore_uart0_irq;
   wire pardcore_uart1_irq;
+  wire pardcore_ethernet_irq;
 
   wire mm2s_introut;
   wire s2mm_introut;
@@ -48,7 +49,8 @@ module system_top (
     .pardcore_uart0_irq(pardcore_uart0_irq),
     .pardcore_uart1_irq(pardcore_uart1_irq),
     .pardcore_uart2_irq(pardcore_uart2_irq),
-    .pardcore_uart3_irq(pardcore_uart3_irq)
+    .pardcore_uart3_irq(pardcore_uart3_irq),
+    .pardcore_ethernet_irq(pardcore_ethernet_irq)
   );
 
   addr_mapper addr_mapper_i(
@@ -67,7 +69,7 @@ module system_top (
     .jtag_TDO(jtag_TDO),
     .jtag_TRST(~pardcore_corerstn),
 
-    .intrs({pardcore_uart3_irq, pardcore_uart2_irq, pardcore_uart1_irq, pardcore_uart0_irq, s2mm_introut, mm2s_introut}),
+    .intrs({pardcore_ethernet_irq, pardcore_uart3_irq, pardcore_uart2_irq, pardcore_uart1_irq, pardcore_uart0_irq, s2mm_introut, mm2s_introut}),
 
     .led(led[7]),
 
