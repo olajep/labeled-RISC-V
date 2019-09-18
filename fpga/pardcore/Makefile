@@ -56,7 +56,9 @@ devicetree: $(build_dir)/$(dtb)
 
 bd: $(bd)
 $(bd): $(bd).in
-	sed 's/@TOPNAME@/$(TOP)/g' $< > $@
+	rm -f $@
+	echo "# WARNING THIS FILE IS MACHIME GENERATED. DO NOT EDIT!" > $@
+	sed 's/@TOPNAME@/$(TOP)/g' $< >> $@
 
 
 .PHONY: $(gen_rtl) verilog devicetree bd
