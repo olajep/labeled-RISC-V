@@ -282,7 +282,7 @@ proc create_root_design { parentCell } {
   # Create ports
   set coreclk [ create_bd_port -dir I coreclk ]
   set corersts [ create_bd_port -dir I -from 1 -to 0 corersts ]
-  set intrs [ create_bd_port -dir I -from 5 -to 0 intrs ]
+  set intrs [ create_bd_port -dir I -from 6 -to 0 intrs ]
   set jtag_TCK [ create_bd_port -dir I jtag_TCK ]
   set jtag_TDI [ create_bd_port -dir I jtag_TDI ]
   set jtag_TDO [ create_bd_port -dir O jtag_TDO ]
