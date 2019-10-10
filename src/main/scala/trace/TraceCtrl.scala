@@ -30,6 +30,8 @@ class TraceCtrlOneBundle extends Bundle
     val buf1_full = Input(Bool())
     val buf0_ptr = Input(UInt(32.W))
     val buf1_ptr = Input(UInt(32.W))
+    val fifo_full = Input(Bool())
+    val fifo_half = Input(Bool())
   }
   val out = new Bundle {
     val enable = Bool()
@@ -65,6 +67,7 @@ trait TraceCtrlModule extends HasRegMap
   val (buf_mask, buf_mask_desc) =
     DescribedReg(UInt(addrWidth.W), "buf_mask", "Size of trace buffer minus 1.",
       reset=Some(0.U(addrWidth.W)), volatile=true)
+  val fifo_full_irq_en = RegInit(UInt(0, width = 1))
 
   val buf0_addr = Reg(Vec(params.nharts, UInt(64.W)))
   val buf1_addr = Reg(Vec(params.nharts, UInt(64.W)))
@@ -76,6 +79,10 @@ trait TraceCtrlModule extends HasRegMap
   val buf1_ptr  = Reg(Vec(params.nharts, UInt(32.W)))
   val buf0_ptr_clear = Wire(Vec(params.nharts, Bool(false)))
   val buf1_ptr_clear = Wire(Vec(params.nharts, Bool(false)))
+  val fifo_full = Reg(Vec(params.nharts, UInt(0, width = 1)))
+  val fifo_half = Reg(Vec(params.nharts, UInt(0, width = 1)))
+  val fifo_full_clear = Wire(Vec(params.nharts, Bool(false)))
+  val fifo_half_clear = Wire(Vec(params.nharts, Bool(false)))
 
   // Wire up inputs
   (buf0_full zip io.harts).foreach {
@@ -90,12 +97,28 @@ trait TraceCtrlModule extends HasRegMap
   (buf1_ptr zip io.harts).foreach {
     case (b, a) => { b := a.in.buf1_ptr }
   }
+  (fifo_full, fifo_full_clear, io.harts).zipped.foreach {
+    case (f, clear, h) => {
+      when      (h.in.fifo_full) { f := 1.U }
+      .elsewhen (clear)          { f := 0.U }
+    }
+  }
+  (fifo_half, fifo_half_clear, io.harts).zipped.foreach {
+    case (f, clear, h) => {
+      when      (h.in.fifo_half) { f := 1.U }
+      .elsewhen (clear)          { f := 0.U }
+    }
+  }
 
   // Connect interrupts
   val any_buf_full : Bool =
     io.harts.exists { a => a.in.buf0_full || a.in.buf1_full }
-  interrupts := Vec.tabulate(1)
-    { _ => (enable & irq_en & any_buf_full).toBool }
+  val any_fifo_full: Bool = io.harts.exists { _.in.fifo_full }
+  interrupts := Vec.tabulate(1) { _ =>
+    (enable &
+      ((irq_en           & any_buf_full) |
+       (fifo_full_irq_en & any_fifo_full))).toBool
+  }
 
   def reg(r: UInt, gn: String, d: RegFieldDesc) =
     RegFieldGroup(gn, None, RegField.bytes(r, (r.getWidth + 7)/8, Some(d)))
@@ -127,6 +150,10 @@ trait TraceCtrlModule extends HasRegMap
       RegField(1, ignore_illegal_insn,
         RegFieldDesc("ignore_illegal_insn",
                      "Don't trace illegal instructions.",
+                     reset = Some(0))),
+      RegField(1, fifo_full_irq_en,
+        RegFieldDesc("fifo_full_irq_en",
+                     "FIFO half full interrupt.",
                      reset = Some(0)))),
     TraceCtrlConsts.buf_mask_offs -> reg(buf_mask, "buf_mask", buf_mask_desc))
 
@@ -148,6 +175,22 @@ trait TraceCtrlModule extends HasRegMap
         Bool(true)
       },
       RegFieldDesc(s"buf1_full_hart${h}", s"Trace buffer1 full hart${h}.",
+                   reset = Some(0), volatile=true)),
+    RegField(1,
+      RegReadFn { _ => (Bool(true), fifo_half(h)) },
+      RegWriteFn { (valid, clear) =>
+        fifo_half_clear(h) := (valid & clear)
+        Bool(true)
+      },
+      RegFieldDesc(s"fifo_half_hart${h}", s"Trace FIFO half full hart${h}.",
+                   reset = Some(0), volatile=true)),
+    RegField(1,
+      RegReadFn { _ => (Bool(true), fifo_full(h)) },
+      RegWriteFn { (valid, clear) =>
+        fifo_full_clear(h) := (valid & clear)
+        Bool(true)
+      },
+      RegFieldDesc(s"fifo_full_hart${h}", s"Trace FIFO full hart${h}.",
                    reset = Some(0), volatile=true)))
   }
 

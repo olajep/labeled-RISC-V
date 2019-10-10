@@ -135,6 +135,8 @@ trait HasTraceAggregatorTLLogic
 
     this.io.ctrl.in.buf0_full := RegNext(this.tracebuf0_full)
     this.io.ctrl.in.buf1_full := RegNext(this.tracebuf1_full)
+    this.io.ctrl.in.fifo_full := RegNext(this.fifo.io.count === (this.outer.params.fifo_depth  - 1).U)
+    this.io.ctrl.in.fifo_half := RegNext(this.fifo.io.count === (this.outer.params.fifo_depth >> 1).U)
 
     when (io.ctrl.out.buf0_ptr_clear) {
       bufptr0 := 0.U
